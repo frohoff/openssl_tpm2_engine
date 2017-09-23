@@ -1,0 +1,15 @@
+EXTRA_DIST = README openssl.cnf.sample
+
+openssl_engine_LTLIBRARIES=libtpm2.la
+bin_PROGRAMS=create_tpm2_key
+openssl_enginedir=@libdir@/engines
+
+libtpm2_la_LDFLAGS= -no-undefined -avoid-version
+libtpm2_la_LIBADD=-lcrypto -ltss
+libtpm2_la_SOURCES=e_tpm2.c tpm2-common.c
+libtpm2_la_CFLAGS=-g -Werror
+
+create_tpm2_key_SOURCES=create_tpm2_key.c tpm2-common.c
+create_tpm2_key_LDADD=-lcrypto -ltss
+create_tpm2_key_CFLAGS=-Werror
+
