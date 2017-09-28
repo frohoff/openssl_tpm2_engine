@@ -2,7 +2,7 @@ EXTRA_DIST = README openssl.cnf.sample
 
 openssl_engine_LTLIBRARIES=libtpm2.la
 bin_PROGRAMS=create_tpm2_key
-openssl_enginedir=@libdir@/engines
+openssl_enginedir=@enginesdir@
 
 libtpm2_la_LDFLAGS= -no-undefined -avoid-version
 libtpm2_la_LIBADD=-lcrypto -ltss

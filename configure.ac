@@ -44,6 +44,28 @@ AC_ARG_WITH(openssl,
 	 AC_SUBST(OPENSSL_LIB_DIR)
 	 AC_SUBST(OPENSSL_INCLUDE_DIR)])
 
+AC_LANG(C)
+AC_LANG_CONFTEST(
+	[AC_LANG_PROGRAM(
+		[[#define HEADER_CRYPTLIB_H
+		  #include <openssl/crypto.h>
+		  #include <stdio.h>]],
+		[[#if OPENSSL_VERSION_NUMBER < 0x10100000
+		  puts(ENGINESDIR);
+		  #else
+		  puts(OpenSSL_version(OPENSSL_ENGINES_DIR));
+		  #endif
+		  ]])])
+gcc $CFLAGS conftest.c
+enginesdir=`./a.out`
+if test -z "$enginesdir" ; then
+    AC_MSG_FAILURE([Failed to find SSL engines directory])
+else
+    AC_SUBST(enginesdir)
+    :
+fi
+
+
 AC_DISABLE_STATIC
 AC_PROG_CC_STDC
 AM_PROG_CC_C_O
