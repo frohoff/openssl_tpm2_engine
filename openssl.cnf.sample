@@ -1,0 +1,22 @@
+#
+# OpenSSL example configuration file. This file will load the TPM engine
+# for all operations that the TPM engine implements for all apps that
+# have OpenSSL config support compiled into them.
+#
+# Adding OpenSSL config support is as simple as adding the following line to
+# the app:
+#
+# #define OPENSSL_LOAD_CONF	1
+#
+openssl_conf = openssl_def
+
+[openssl_def]
+engines = engine_section
+
+[engine_section]
+
+tpm2 = tpm2_section
+
+[tpm2_section]
+soft_load = 1
+init = 1
