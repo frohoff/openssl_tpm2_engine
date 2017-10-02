@@ -2,8 +2,10 @@
 # configure.in for the OpenSSL TPM engine project
 #
 
-AC_INIT(openssl-tpm2-engine, 0.0.1)
+AC_INIT(openssl-tpm2-engine, 0.0.1, <James.Bottomley@HansenPartnership.com>)
 AM_INIT_AUTOMAKE(1.6.3)
+
+AM_MISSING_PROG(HELP2MAN, help2man)
 
 # Debugging support
 AC_ARG_ENABLE(debug,
@@ -60,11 +62,9 @@ gcc $CFLAGS conftest.c
 enginesdir=`./a.out`
 if test -z "$enginesdir" ; then
     AC_MSG_FAILURE([Failed to find SSL engines directory])
-else
-    AC_SUBST(enginesdir)
-    :
 fi
 
+AC_SUBST(enginesdir)
 
 AC_DISABLE_STATIC
 AC_PROG_CC_STDC
@@ -77,6 +77,4 @@ CFLAGS="$CFLAGS -Wall"
 AC_SUBST(CFLAGS)
 
 AC_OUTPUT(Makefile)
-
-echo "CFLAGS=$CFLAGS"
 

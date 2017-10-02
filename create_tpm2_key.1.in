@@ -1,0 +1,55 @@
+[name]
+create_tpm2_key - create tpm2 loadable key
+
+[description]
+
+Can be used to create a TPM loadable representation of a private key.
+The key is either internal to the TPM or wrapped from an existing
+private key.
+
+[examples]
+
+Create a self-signed cert using the TPM engine:
+
+0. Good practice is to generate the RSA version of the primary storage
+   seed and place it at well known location 81000001 (Microsoft Spec).
+   To do this, you need to manipulate the non resource manager
+   interface so the keys aren't lost when the process dies:
+
+ # TPM_DEVICE=/dev/tpm0 tsscreateprimary -hi o -st -rsa
+ Handle 80000000
+ # TPM_DEVICE=/dev/tpm0 tssevictcontrol -hi o -ho 80000000 -hp 81000001
+ # TPM_DEVICE=/dev/tpm0 tssflushcontext -ha 80000000
+
+   where 80000000 is the the handle and is always returned by the
+   first command. You must do the final tssflushcontext otherwise the
+   transient key won't get flushed since you used the non resource
+   manager interface.
+
+   Note: tsscreateprimary will take a while to run (50s on my laptop)
+   while the TPM derivces an RSA key from the primary seed.  This long
+   time is why you want to store a permanent copy of the derived key.
+
+1. Generate an external key and wrap it for the TPM:
+ $ openssl genrsa 2048 > <private key>
+ $ create_tpm2_key -w <private key> [-p 81000001] <key file>
+
+   Note: specifying the parent is optional (and you need to have
+   created it in step 0) but if you leave it out, the key will still
+   end up parented to the primary storage seed and the TPM will have
+   to re-derive the RSA version of that seed each time you use it
+   (possibly taking 50s or more each time)
+
+   Note: because the RSA private key is sent to the TPM encrypted, the
+   tss has to have access to the public part of the parent key (if you
+   didn't specify a parent, this public part will be created when the
+   parent key is derived from the storage primary seed), so you may
+   need to do tssreadpublic -p 81000001 before it will work.
+
+2. Make the openssl certificate request:
+ $ openssl req -keyform engine -engine tpm -key <key file> -new -x509 -days 365 
+-out <certfilename>
+
+3. Test using openssl:
+ $ openssl s_server -cert <certfilename> -www -accept 4433 -keyform engine -engi
+ne tpm -key <keyfilename>

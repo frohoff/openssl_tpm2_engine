@@ -32,6 +32,7 @@ static struct option long_options[] = {
 	{"name-scheme", 1, 0, 'n'},
 	{"parent-handle", 1, 0, 'p'},
 	{"wrap", 1, 0, 'w'},
+	{"version", 0, 0, 'v'},
 	{0, 0, 0, 0}
 };
 
@@ -41,17 +42,17 @@ static int name_alg_size = SHA256_DIGEST_SIZE;
 void
 usage(char *argv0)
 {
-	fprintf(stderr, "\t%s: create a TPM key and write it to disk\n"
-		"\tusage: %s [options] <filename>\n\n"
-		"\tOptions:\n"
-		"\t\t-a|--auth          require a password for the key [NO]\n"
-		"\t\t-h|--help          print this help message\n"
-		"\t\t-s|--key-size      key size in bits [2048]\n"
-		"\t\t-n|--name-scheme   name algorithm to use sha1 [sha256] sha384 sha512\n"
-		"\t\t-p|--parent-handle persistent handle of parent key\n"
-		"\t\t-w|--wrap [file]   wrap an existing openssl PEM key\n"
-		"\nReport bugs to %s\n",
-		argv0, argv0, PACKAGE_BUGREPORT);
+	fprintf(stdout, "Usage: %s [options] <filename>\n\n"
+		"Options:\n"
+		"\t-a, --auth          require a password for the key [NO]\n"
+		"\t-h, --help          print this help message\n"
+		"\t-s, --key-size      key size in bits [2048]\n"
+		"\t-n, --name-scheme   name algorithm to use sha1 [sha256] sha384 sha512\n"
+		"\t-p, --parent-handle persistent handle of parent key\n"
+		"\t-v, --version       print package version\n"
+		"\t-w, --wrap [file]   wrap an existing openssl PEM key\n\n"
+		"Report bugs to " PACKAGE_BUGREPORT "\n",
+		argv0);
 	exit(-1);
 }
 
@@ -266,7 +267,7 @@ int main(int argc, char **argv)
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ap:hw:",
+		c = getopt_long(argc, argv, "n:s:ap:hw:v",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -305,6 +306,13 @@ int main(int argc, char **argv)
 			case 'w':
 				wrap = optarg;
 				break;
+			case 'v':
+				fprintf(stdout, "%s " VERSION "\n"
+					"Copyright 2017 by James Bottomley\n"
+					"License GPLv2: GNU GPL version 2\n"
+					"Written by James Bottomley <James.Bottomley@HansenPartnership.com>\n",
+					argv[0]);
+				exit(0);
 			default:
 				usage(argv[0]);
 				break;
