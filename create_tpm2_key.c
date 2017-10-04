@@ -252,8 +252,8 @@ TPM_RC wrap_key(TPM2B_PRIVATE *priv, const char *password, EVP_PKEY *pkey)
 
 int main(int argc, char **argv)
 {
-	char *filename, c, *wrap = NULL, *auth = NULL;
-	int option_index;
+	char *filename, *wrap = NULL, *auth = NULL;
+	int option_index, c;
 	const char *reason;
 	TSS_CONTEXT *tssContext = NULL;
 	TPM_HANDLE parent = 0;
@@ -314,6 +314,7 @@ int main(int argc, char **argv)
 					argv[0]);
 				exit(0);
 			default:
+				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
 				break;
 		}
@@ -321,8 +322,10 @@ int main(int argc, char **argv)
 
 	filename = argv[argc - 1];
 
-	if (argc < 2)
+	if (argc < 2) {
+		printf("Unexpected additional arguments\n");
 		usage(argv[0]);
+	}
 
 	if (key_size && wrap) {
 		fprintf(stderr, "key-size and wrap are mutually exclusive\n");
