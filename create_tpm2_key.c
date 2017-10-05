@@ -211,50 +211,27 @@ TPM_RC openssl_to_tpm_private(TPMT_SENSITIVE *priv, EVP_PKEY *pkey)
 	return TPM_RC_ASYMMETRIC;
 }
 
-TPM_RC wrap_key(TPM2B_PRIVATE *priv, const char *password, EVP_PKEY *pkey)
+void wrap_key(TPMT_SENSITIVE *s, const char *password, EVP_PKEY *pkey)
 {
-	TPMT_SENSITIVE s;
-	TPM2B_SENSITIVE b;
-	BYTE *buf;
-	int32_t size;
-	TPM_RC rc;
+	memset(s, 0, sizeof(*s));
 
-	memset(&b, 0, sizeof(b));
-	memset(&s, 0, sizeof(s));
-
-	openssl_to_tpm_private(&s, pkey);
+	openssl_to_tpm_private(s, pkey);
 
 	if (password) {
 		int len = strlen(password);
 
-		memcpy(s.authValue.b.buffer, password, len);
-		s.authValue.b.size = len;
+		memcpy(s->authValue.b.buffer, password, len);
+		s->authValue.b.size = len;
 	} else {
-		s.authValue.b.size = 0;
+		s->authValue.b.size = 0;
 	}
-	size = sizeof(s);
-	buf = b.b.buffer;
-	rc = TSS_TPMT_SENSITIVE_Marshal(&s, &b.b.size, &buf, &size);
-	if (rc)
-		tpm2_error(rc, "TSS_TPMT_SENSITIVE_Marshal");
-
-	size = sizeof(*priv);
-	buf = priv->b.buffer;
-	priv->b.size = 0;
-	/* no encryption means innerIntegrity and outerIntegrity are
-	* absent, so the TPM2B_PRIVATE is a TPMT_SENSITIVE*/
-	rc = TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)&b, &priv->b.size, &buf, &size);
-	if (rc)
-		tpm2_error(rc, "TSS_TPM2B_PRIVATE_Marshal");
-
-	return TPM_RC_ASYMMETRIC;
 }
 
 int main(int argc, char **argv)
 {
 	char *filename, *wrap = NULL, *auth = NULL;
 	int option_index, c;
-	const char *reason;
+	const char *reason = "";
 	TSS_CONTEXT *tssContext = NULL;
 	TPM_HANDLE parent = 0;
 	TPM_RC rc = 0;
@@ -366,7 +343,9 @@ int main(int argc, char **argv)
 		Import_Out iout;
 		EVP_PKEY *pkey;
 		TPM_HANDLE authHandle;
- 
+		TPMT_SENSITIVE s;
+		TPM2B_NAME name;
+
 		/* may be needed to decrypt the key */
 		OpenSSL_add_all_ciphers();
 		pkey = openssl_read_key(wrap);
@@ -376,13 +355,31 @@ int main(int argc, char **argv)
 		}
 
 		iin.parentHandle = parent;
-		iin.encryptionKey.t.size = 0;
-		openssl_to_tpm_public(&iin.objectPublic, pkey);
+		memcpy(iin.encryptionKey.t.buffer, "0123456789abcdef", T2_AES_KEY_BYTES);
+		iin.encryptionKey.t.size = T2_AES_KEY_BYTES;
 		/* set random iin.symSeed */
 		iin.inSymSeed.t.size = 0;
-		iin.symmetricAlg.algorithm = TPM_ALG_NULL;
-		wrap_key(&iin.duplicate, auth, pkey);
+		iin.symmetricAlg.algorithm = TPM_ALG_AES;
+		iin.symmetricAlg.keyBits.aes = T2_AES_KEY_BITS;
+		iin.symmetricAlg.mode.aes = TPM_ALG_CFB;
+
+		wrap_key(&s, auth, pkey);
 		openssl_to_tpm_public(&iin.objectPublic, pkey);
+		rc = tpm2_ObjectPublic_GetName(&name,
+					       &iin.objectPublic.publicArea);
+		if (rc) {
+			reason = "tpm2_ObjectPublic_GetName";
+			goto out_flush;
+		}
+
+		rc = tpm2_SensitiveToDuplicate(&s, &name, name_alg, NULL,
+					       &iin.symmetricAlg,
+					       &iin.encryptionKey,
+					       &iin.duplicate);
+		if (rc) {
+			reason = "tpm2_SensitiveToDuplicate";
+			goto out_flush;
+		}
 
 		/* use salted parameter encryption to hide the key */
 		rc = tpm2_get_hmac_handle(tssContext, &authHandle, parent);

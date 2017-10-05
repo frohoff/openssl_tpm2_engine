@@ -7,11 +7,16 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <arpa/inet.h>
+
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 
 #include <tss2/tss.h>
 #include <tss2/tssresponsecode.h>
+#include <tss2/tssmarshal.h>
+#include <tss2/tsscrypto.h>
+#include <tss2/tsscryptoh.h>
 
 #include "tpm2-common.h"
 
@@ -205,4 +210,136 @@ TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	*handle = out.sessionHandle;
 
 	return TPM_RC_SUCCESS;
+}
+
+/*
+ * Cut down version of Part 4 Supporting Routines 7.6.3.10
+ *
+ * Hard coded to symmetrically encrypt with aes128 as the inner
+ * wrapper and no outer wrapper but with a prototype that allows
+ * drop in replacement with a tss equivalent
+ */
+TPM_RC tpm2_SensitiveToDuplicate(TPMT_SENSITIVE *s,
+				 TPM2B_NAME *name,
+				 TPM_ALG_ID nalg,
+				 TPM2B_SEED *seed,
+				 TPMT_SYM_DEF_OBJECT *symdef,
+				 TPM2B_DATA *innerkey,
+				 TPM2B_PRIVATE *p)
+{
+	BYTE *buf = p->t.buffer;
+
+	p->t.size = 0;
+	memset(p, 0, sizeof(*p));
+
+	/* hard code AES CFB */
+	if (symdef->algorithm == TPM_ALG_AES
+	    && symdef->mode.aes == TPM_ALG_CFB) {
+		TPMT_HA hash;
+		const int hlen = TSS_GetDigestSize(nalg);
+		TPM2B *digest = (TPM2B *)buf;
+		TPM2B *s2b;
+		int32_t size;
+		unsigned char null_iv[AES_128_BLOCK_SIZE_BYTES];
+		UINT16 bsize, written = 0;
+
+		/* WARNING: don't use the static null_iv trick here:
+		 * the AES routines alter the passed in iv */
+		memset(null_iv, 0, sizeof(null_iv));
+
+		/* reserve space for hash before the encrypted sensitive */
+		bsize = sizeof(digest->size) + hlen;
+		buf += bsize;
+		p->t.size += bsize;
+		s2b = (TPM2B *)buf;
+
+		/* marshal the digest size */
+		buf = (BYTE *)&digest->size;
+		bsize = hlen;
+		size = 2;
+		TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
+
+		/* marshal the unencrypted sensitive in place */
+		size = sizeof(*s);
+		bsize = 0;
+		buf = s2b->buffer;
+		TSS_TPMT_SENSITIVE_Marshal(s, &bsize, &buf, &size);
+		buf = (BYTE *)&s2b->size;
+		size = 2;
+		TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
+
+		bsize = bsize + sizeof(s2b->size);
+		p->t.size += bsize;
+
+		/* compute hash of unencrypted marshalled sensitive and
+		 * write to the digest buffer */
+		hash.hashAlg = nalg;
+		TSS_Hash_Generate(&hash, bsize, s2b,
+				  name->t.size, name->t.name,
+				  0, NULL);
+		memcpy(digest->buffer, &hash.digest, hlen);
+
+		/* encrypt hash and sensitive in place */
+		TSS_AES_EncryptCFB(p->t.buffer,
+				   symdef->keyBits.aes,
+				   innerkey->b.buffer,
+				   null_iv,
+				   p->t.size,
+				   p->t.buffer);
+	} else if (symdef->algorithm == TPM_ALG_NULL) {
+		TPM2B *s2b = (TPM2B *)buf;
+		int32_t size = sizeof(*s);
+		UINT16 bsize = 0, written = 0;
+
+		buf = s2b->buffer;
+
+		/* marshal the unencrypted sensitive in place */
+		TSS_TPMT_SENSITIVE_Marshal(s, &bsize, &buf, &size);
+		buf = (BYTE *)&s2b->size;
+		size = 2;
+		TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
+
+		p->b.size += bsize + sizeof(s2b->size);
+	} else {
+		printf("Unknown symmetric algorithm\n");
+		return TPM_RC_SYMMETRIC;
+	}
+
+	return TPM_RC_SUCCESS;
+}
+
+TPM_RC tpm2_ObjectPublic_GetName(TPM2B_NAME *name,
+				 TPMT_PUBLIC *tpmtPublic)
+{
+	TPM_RC rc = 0;
+	uint16_t written = 0;
+	TPMT_HA digest;
+	uint32_t sizeInBytes;
+	uint8_t buffer[MAX_RESPONSE_SIZE];
+
+	/* marshal the TPMT_PUBLIC */
+	if (rc == 0) {
+		INT32 size = MAX_RESPONSE_SIZE;
+		uint8_t *buffer1 = buffer;
+		rc = TSS_TPMT_PUBLIC_Marshal(tpmtPublic, &written, &buffer1, &size);
+	}
+	/* hash the public area */
+	if (rc == 0) {
+		sizeInBytes = TSS_GetDigestSize(tpmtPublic->nameAlg);
+		digest.hashAlg = tpmtPublic->nameAlg;	/* Name digest algorithm */
+		/* generate the TPMT_HA */
+		rc = TSS_Hash_Generate(&digest,	
+				       written, buffer,
+				       0, NULL);
+	}
+	if (rc == 0) {
+		/* copy the digest */
+		memcpy(name->t.name + sizeof(TPMI_ALG_HASH), (uint8_t *)&digest.digest, sizeInBytes);
+		/* copy the hash algorithm */
+		TPMI_ALG_HASH nameAlgNbo = htons(tpmtPublic->nameAlg);
+		memcpy(name->t.name, (uint8_t *)&nameAlgNbo, sizeof(TPMI_ALG_HASH));
+		/* set the size */
+		name->t.size = sizeInBytes + sizeof(TPMI_ALG_HASH);
+	}
+	return rc;
 }
