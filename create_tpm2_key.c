@@ -355,7 +355,12 @@ int main(int argc, char **argv)
 		}
 
 		iin.parentHandle = parent;
-		memcpy(iin.encryptionKey.t.buffer, "0123456789abcdef", T2_AES_KEY_BYTES);
+
+		rc = RAND_bytes(iin.encryptionKey.t.buffer, T2_AES_KEY_BYTES);
+		if (!rc) {
+			reason = "Can't get a random AES key for parameter encryption";
+			goto out_delete;
+		}
 		iin.encryptionKey.t.size = T2_AES_KEY_BYTES;
 		/* set random iin.symSeed */
 		iin.inSymSeed.t.size = 0;
