@@ -182,6 +182,7 @@ TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 
 	memset(&in, 0, sizeof(in));
 	memset(&extra, 0 , sizeof(extra));
+	in.bind = TPM_RH_NULL;
 	in.sessionType = TPM_SE_HMAC;
 	in.authHash = TPM_ALG_SHA256;
 	in.tpmKey = TPM_RH_NULL;

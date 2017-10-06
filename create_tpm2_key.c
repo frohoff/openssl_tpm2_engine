@@ -394,7 +394,6 @@ int main(int argc, char **argv)
 				 (COMMAND_PARAMETERS *)&iin,
 				 NULL,
 				 TPM_CC_Import,
-				 TPM_RS_PW, NULL, 0,
 				 authHandle, NULL, TPMA_SESSION_DECRYPT,
 				 TPM_RH_NULL, NULL, 0);
 		if (rc) {
