@@ -1,0 +1,13 @@
+HOME		= .
+RANDFILE	= $ENV::HOME/.rnd
+openssl_conf	= openssl_init
+
+[openssl_init]
+engines		= engines_section
+
+[engines_section]
+tpm2		= tpm2_section
+
+[tpm2_section]
+dynamic_path	= $ENV::srcdir/../.libs/libtpm2.so
+init		= 1

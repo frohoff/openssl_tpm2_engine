@@ -19,3 +19,5 @@ create_tpm2_key_CFLAGS=-Werror
 
 $(builddir)/%.1: $(srcdir)/%.1.in $(top_builddir)/%
 	$(HELP2MAN) --no-info -i $< -o $@ $(top_builddir)/$*
+
+SUBDIRS = tests

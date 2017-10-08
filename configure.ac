@@ -76,5 +76,5 @@ AC_PROG_LIBTOOL
 CFLAGS="$CFLAGS -Wall"
 AC_SUBST(CFLAGS)
 
-AC_OUTPUT(Makefile)
+AC_OUTPUT([Makefile tests/Makefile])
 
