@@ -51,7 +51,9 @@ usage(char *argv0)
 		"\t-n, --name-scheme   name algorithm to use sha1 [sha256] sha384 sha512\n"
 		"\t-p, --parent-handle persistent handle of parent key\n"
 		"\t-v, --version       print package version\n"
-		"\t-w, --wrap [file]   wrap an existing openssl PEM key\n\n"
+		"\t-w, --wrap [file]   wrap an existing openssl PEM key\n"
+		"\t-k, --password      use this password instead of prompting\n"
+		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
 	exit(-1);
