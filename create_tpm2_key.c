@@ -430,7 +430,7 @@ int main(int argc, char **argv)
 			TPMA_OBJECT_SENSITIVEDATAORIGIN;
 		if (auth) {
 			int len = strlen(auth);
-			memcpy(&cin.inSensitive.sensitive.userAuth.b,
+			memcpy(&cin.inSensitive.sensitive.userAuth.b.buffer,
 			       auth, len);
 			cin.inSensitive.sensitive.userAuth.b.size = len;
 		} else {
