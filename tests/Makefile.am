@@ -10,4 +10,4 @@ AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
 	export TPM_INTERFACE_TYPE OPENSSL_CONF;
 TEST_EXTENSIONS = .sh
 
-CLEANFILES = key0.tpm key0.pub key1.priv key1.tpm key1.pub tmp.msg NVChip
+CLEANFILES = key?.tpm key?.pub key?.priv tmp.* NVChip h*.bin
