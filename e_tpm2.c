@@ -157,7 +157,8 @@ static char *tpm2_get_auth_ui(UI_METHOD *ui_method, char *prompt, void *cb_data)
 
 	UI_add_user_data(ui, cb_data);
 
-	if (UI_add_input_string(ui, prompt, 0, auth, 0, sizeof(auth)) == 0) {
+	if (UI_add_input_string(ui, prompt, UI_INPUT_FLAG_DEFAULT_PWD,
+				auth, 0, sizeof(auth)) == 0) {
 		fprintf(stderr, "UI_add_input_string failed\n");
 		goto out;
 	}
