@@ -45,14 +45,14 @@ usage(char *argv0)
 {
 	fprintf(stdout, "Usage: %s [options] <filename>\n\n"
 		"Options:\n"
-		"\t-a, --auth          require a password for the key [NO]\n"
-		"\t-h, --help          print this help message\n"
-		"\t-s, --key-size      key size in bits [2048]\n"
-		"\t-n, --name-scheme   name algorithm to use sha1 [sha256] sha384 sha512\n"
-		"\t-p, --parent-handle persistent handle of parent key\n"
-		"\t-v, --version       print package version\n"
-		"\t-w, --wrap [file]   wrap an existing openssl PEM key\n"
-		"\t-k, --password      use this password instead of prompting\n"
+		"\t-a, --auth                    require a password for the key [NO]\n"
+		"\t-h, --help                    print this help message\n"
+		"\t-s, --key-size <size>         key size in bits [2048]\n"
+		"\t-n, --name-scheme <scheme>    name algorithm to use sha1 [sha256] sha384 sha512\n"
+		"\t-p, --parent-handle <handle>  persistent handle of parent key\n"
+		"\t-v, --version                 print package version\n"
+		"\t-w, --wrap <file>             wrap an existing openssl PEM key\n"
+		"\t-k, --password <pwd>          use this password instead of prompting\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
