@@ -514,6 +514,8 @@ static int tpm2_rsa_priv_dec(int flen,
 			 TPM_RH_NULL, NULL, 0);
 	if (rc) {
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
+		/* failure means auth handle is not flushed */
+		tpm2_flush_handle(tssContext, authHandle);
 		return rv;
 	}
  
@@ -598,6 +600,8 @@ static int tpm2_rsa_priv_enc(int flen,
 
 	if (rc) {
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
+		/* failure means auth handle is not flushed */
+		tpm2_flush_handle(tssContext, authHandle);
 		return rv;
 	}
 
