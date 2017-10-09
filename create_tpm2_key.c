@@ -33,6 +33,7 @@ static struct option long_options[] = {
 	{"parent-handle", 1, 0, 'p'},
 	{"wrap", 1, 0, 'w'},
 	{"version", 0, 0, 'v'},
+	{"password", 1, 0, 'k'},
 	{0, 0, 0, 0}
 };
 
@@ -240,11 +241,12 @@ int main(int argc, char **argv)
 	int32_t size, key_size = 0;
 	TPM2B_PUBLIC *pub;
 	TPM2B_PRIVATE *priv;
+	char *key = NULL;
 
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ap:hw:v",
+		c = getopt_long(argc, argv, "n:s:ap:hw:vk:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -290,6 +292,13 @@ int main(int argc, char **argv)
 					"Written by James Bottomley <James.Bottomley@HansenPartnership.com>\n",
 					argv[0]);
 				exit(0);
+			case 'k':
+				key = optarg;
+				if (strlen(key) > 127) {
+					printf("password is too long\n");
+					exit(1);
+				}
+				break;
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
@@ -318,9 +327,14 @@ int main(int argc, char **argv)
 	}
 
 	if (auth) {
-		if (EVP_read_pw_string(auth, 128, "Enter TPM key authority: ", 1)) {
-			fprintf(stderr, "Passwords do not match\n");
-			exit(1);
+		if (key) {
+			/* key length already checked */
+			strcpy(auth, key);
+		} else {
+			if (EVP_read_pw_string(auth, 128, "Enter TPM key authority: ", 1)) {
+				fprintf(stderr, "Passwords do not match\n");
+				exit(1);
+			}
 		}
 	}
 
