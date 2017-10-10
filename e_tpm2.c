@@ -31,7 +31,7 @@
 #define TPM2_ENGINE_EX_DATA_UNINIT		-1
 
 /* structure pointed to by the RSA object's app_data pointer */
-struct rsa_app_data
+struct app_data
 {
 	TSS_CONTEXT *tssContext;
 	TPM_HANDLE parent;
@@ -128,7 +128,7 @@ static int ex_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
 
 static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, char **auth)
 {
-	struct rsa_app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
+	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
 
 	if (!app_data)
 		return 0;
@@ -214,6 +214,31 @@ static char *tpm2_get_auth(struct tpm_ui *ui, char *input_string,
 		return tpm2_get_auth_pem(ui->pem_cb, input_string, cb_data);
 }
 
+void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
+{
+	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
+
+	rsa->meth = &tpm2_rsa;
+	/* call our local init function here */
+	rsa->meth->init(rsa);
+
+	RSA_set_ex_data(rsa, ex_app_data, data);
+
+	/* release the reference EVP_PKEY_get1_RSA obtained */
+	RSA_free(rsa);
+}
+
+void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
+{
+	switch (EVP_PKEY_id(pkey)) {
+	case EVP_PKEY_RSA:
+		tpm2_bind_key_to_engine_rsa(pkey, data);
+		break;
+	default:
+		break;
+	}
+}
+
 static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     const char *key_id,  BIO *bio,
 				     struct tpm_ui *ui, void *cb_data)
@@ -223,12 +248,11 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	TSS_CONTEXT *tssContext;
 	TPM_RC rc;
 	EVP_PKEY *pkey;
-	RSA *rsa;
 	BIO *bf;
 	TSSLOADABLE *tssl;
 	BYTE *buffer;
 	INT32 size;
-	struct rsa_app_data *app_data;
+	struct app_data *app_data;
 	char oid[128];
 	int empty_auth;
 
@@ -280,7 +304,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		goto err;
 	}
 
-	app_data = OPENSSL_malloc(sizeof(struct rsa_app_data));
+	app_data = OPENSSL_malloc(sizeof(struct app_data));
 
 	if (!app_data) {
 		fprintf(stderr, "Failed to allocate app_data\n");
@@ -344,15 +368,8 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	}
 
 	TSSLOADABLE_free(tssl);
-	rsa = EVP_PKEY_get1_RSA(pkey);
-	rsa->meth = &tpm2_rsa;
-	/* call our local init function here */
-	rsa->meth->init(rsa);
+	tpm2_bind_key_to_engine(pkey, app_data);
 
-	RSA_set_ex_data(rsa, ex_app_data, app_data);
-
-	/* release the reference EVP_PKEY_get1_RSA obtained */
-	RSA_free(rsa);
 	*ppkey = pkey;
 	return 1;
 
@@ -428,7 +445,7 @@ static int tpm2_rsa_init(RSA *rsa)
 
 static int tpm2_rsa_finish(RSA *rsa)
 {
-	struct rsa_app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
+	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
 	TSS_CONTEXT *tssContext;
 
 	if (!app_data)
