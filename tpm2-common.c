@@ -500,3 +500,17 @@ int tpm2_curve_name_to_nid(TPMI_ECC_CURVE curve)
 
 	return 0;
 }
+
+TPMI_ECC_CURVE tpm2_nid_to_curve_name(int nid)
+{
+	int i;
+
+	if (!nid)
+		return TPM_ECC_NONE;
+
+	for (i = 0; tpm2_supported_curves[i].name != NULL; i++)
+		if (tpm2_supported_curves[i].nid == nid)
+			return tpm2_supported_curves[i].curve;
+
+	return TPM_ECC_NONE;
+}

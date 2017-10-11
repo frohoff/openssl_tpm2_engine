@@ -157,6 +157,70 @@ void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve)
 	pub->unique.ecc.y.t.size = 0;
 }
 
+TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
+{
+	EC_KEY *eck = EVP_PKEY_get1_EC_KEY(pkey);
+	const EC_GROUP *g = EC_KEY_get0_group(eck);
+	const EC_POINT *P;
+	int nid = EC_GROUP_get_curve_name(g);
+	TPMI_ECC_CURVE curve;
+	TPM_RC rc = TPM_RC_CURVE;
+	BN_CTX *ctx = NULL;
+	BIGNUM *x, *y;
+
+	if (!nid) {
+		/* FIXME: could be bnp256 */
+		fprintf(stderr, "Error: openssl has no NID for this curve\n");
+		goto err;
+	}
+
+        curve = tpm2_nid_to_curve_name(nid);
+
+	if (curve == TPM_ECC_NONE) {
+		fprintf(stderr, "TPM does not support the curve in this EC key\n");
+		goto err;
+	}
+	tpm2_public_template_ecc(pub, curve);
+	P = EC_KEY_get0_public_key(eck);
+
+	if (!P) {
+		fprintf(stderr, "No public key available\n");
+		goto err;
+	}
+
+	ctx = BN_CTX_new();
+	if (!ctx) {
+		fprintf(stderr, "Unable to allocate context\n");
+		goto err;
+	}
+
+	BN_CTX_start(ctx);
+	x = BN_CTX_get(ctx);
+	y = BN_CTX_get(ctx);
+	if (!x || !y) {
+		fprintf(stderr, "Unable to allocate co-ordinates\n");
+		goto err;
+	}
+	if (!EC_POINT_get_affine_coordinates_GFp(g, P, x, y, ctx)) {
+		fprintf(stderr, "Unable to get public key co-ordinates\n");
+		goto err;
+	}
+
+	pub->unique.ecc.x.t.size = BN_bn2bin(x, pub->unique.ecc.x.t.buffer);
+	pub->unique.ecc.y.t.size = BN_bn2bin(y, pub->unique.ecc.y.t.buffer);
+
+	rc = TPM_RC_SUCCESS;
+
+ err:
+	if (ctx) {
+		BN_CTX_end(ctx);
+		BN_CTX_free(ctx);
+	}
+	EC_KEY_free(eck);
+
+	return rc;
+}
+
 TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 {
 	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
@@ -202,10 +266,43 @@ TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey)
 	switch (EVP_PKEY_type(pkey->type)) {
 	case EVP_PKEY_RSA:
 		return openssl_to_tpm_public_rsa(tpub, pkey);
+	case EVP_PKEY_EC:
+		return openssl_to_tpm_public_ecc(tpub, pkey);
 	default:
 		break;
 	}
 	return TPM_RC_ASYMMETRIC;
+}
+
+TPM_RC openssl_to_tpm_private_ecc(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
+{
+	const BIGNUM *pk;
+	TPM2B_ECC_PARAMETER *t2becc = &s->sensitive.ecc;
+	EC_KEY *eck = EVP_PKEY_get1_EC_KEY(pkey);
+	TPM_RC rc = TPM_RC_KEY;
+
+	if (!eck) {
+		printf("Could not get EC Key\n");
+		return rc;
+	}
+
+	pk = EC_KEY_get0_private_key(eck);
+
+	if (!pk) {
+		printf("Could not get Private Key\n");
+		goto out;
+	}
+
+	t2becc->t.size = BN_bn2bin(pk, t2becc->t.buffer);
+	s->sensitiveType = TPM_ALG_ECC;
+	s->seedValue.b.size = 0;
+
+	rc = TPM_RC_SUCCESS;
+
+ out:
+	EC_KEY_free(eck);
+
+	return rc;
 }
 
 TPM_RC openssl_to_tpm_private_rsa(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
@@ -237,17 +334,23 @@ TPM_RC openssl_to_tpm_private(TPMT_SENSITIVE *priv, EVP_PKEY *pkey)
 	switch (EVP_PKEY_type(pkey->type)) {
 	case EVP_PKEY_RSA:
 		return openssl_to_tpm_private_rsa(priv, pkey);
+	case EVP_PKEY_EC:
+		return openssl_to_tpm_private_ecc(priv, pkey);
 	default:
 		break;
 	}
 	return TPM_RC_ASYMMETRIC;
 }
 
-void wrap_key(TPMT_SENSITIVE *s, const char *password, EVP_PKEY *pkey)
+TPM_RC wrap_key(TPMT_SENSITIVE *s, const char *password, EVP_PKEY *pkey)
 {
+	TPM_RC rc;
+
 	memset(s, 0, sizeof(*s));
 
-	openssl_to_tpm_private(s, pkey);
+	rc = openssl_to_tpm_private(s, pkey);
+	if (rc != TPM_RC_SUCCESS)
+		return rc;
 
 	if (password) {
 		int len = strlen(password);
@@ -257,6 +360,7 @@ void wrap_key(TPMT_SENSITIVE *s, const char *password, EVP_PKEY *pkey)
 	} else {
 		s->authValue.b.size = 0;
 	}
+	return TPM_RC_SUCCESS;
 }
 
 int main(int argc, char **argv)
@@ -432,8 +536,16 @@ int main(int argc, char **argv)
 		iin.symmetricAlg.keyBits.aes = T2_AES_KEY_BITS;
 		iin.symmetricAlg.mode.aes = TPM_ALG_CFB;
 
-		wrap_key(&s, auth, pkey);
-		openssl_to_tpm_public(&iin.objectPublic, pkey);
+		rc = wrap_key(&s, auth, pkey);
+		if (rc) {
+			reason = "wrap_key";
+			goto out_flush;
+		}
+		rc = openssl_to_tpm_public(&iin.objectPublic, pkey);
+		if (rc) {
+			reason = "openssl_to_tpm_public";
+			goto out_flush;
+		}
 		rc = tpm2_ObjectPublic_GetName(&name,
 					       &iin.objectPublic.publicArea);
 		if (rc) {
