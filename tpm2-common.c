@@ -127,26 +127,35 @@ void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h)
 		    TPM_RH_NULL, NULL, 0);
 }
 
+static EC_GROUP *tpm2_get_ecc_group(TPMS_ECC_PARMS *p)
+{
+	const int nid = tpm2_curve_name_to_nid(p->curveID);
+
+	return EC_GROUP_new_by_curve_name(nid);
+}
+
 static EVP_PKEY *tpm2_to_openssl_public_ecc(TPMT_PUBLIC *pub)
 {
 	EC_KEY *eck = EC_KEY_new();
 	EVP_PKEY *pkey;
 	EC_GROUP *g;
 	BIGNUM *x, *y;
-	const int nid = tpm2_curve_name_to_nid(pub->parameters.eccDetail.curveID);
 
-	if (!eck || !nid)
+	if (!eck)
 		return NULL;
 	pkey = EVP_PKEY_new();
 	if (!pkey)
 		goto err_free_eck;
-	g = EC_GROUP_new_by_curve_name(nid);
+	g = tpm2_get_ecc_group(&pub->parameters.eccDetail);
 	if (!g)
 		goto err_free_pkey;
 	EC_KEY_set_group(eck, g);
+	EC_GROUP_free(g);
 	x = BN_bin2bn(pub->unique.ecc.x.t.buffer, pub->unique.ecc.x.t.size, NULL);
 	y = BN_bin2bn(pub->unique.ecc.y.t.buffer, pub->unique.ecc.y.t.size, NULL);
 	EC_KEY_set_public_key_affine_coordinates(eck, x, y);
+	BN_free(y);
+	BN_free(x);
 	if (!EVP_PKEY_assign_EC_KEY(pkey, eck))
 		goto err_free_pkey;
 
