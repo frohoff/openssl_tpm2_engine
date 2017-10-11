@@ -163,9 +163,10 @@ TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 	BIGNUM *n, *e;
 	int size = RSA_size(rsa);
 	unsigned long exp;
+	TPM_RC rc = TPM_RC_KEY_SIZE;
 
 	if (size > MAX_RSA_KEY_BYTES)
-		return TPM_RC_KEY_SIZE;
+		goto err;
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	n = rsa->n;
@@ -176,7 +177,7 @@ TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 	exp = BN_get_word(e);
 	/* TPM limitations means exponents must be under a word in size */
 	if (exp == 0xffffffffL)
-		return TPM_RC_KEY_SIZE;
+		goto err;
 	tpm2_public_template_rsa(pub);
 	pub->parameters.rsaDetail.keyBits = size*8;
 	if (exp == 0x10001)
@@ -186,7 +187,11 @@ TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 
 	pub->unique.rsa.t.size = BN_bn2bin(n, pub->unique.rsa.t.buffer);
 
-	return 0;
+	rc = 0;
+ err:
+	RSA_free(rsa);
+
+	return rc;
 }
 
 TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey)
