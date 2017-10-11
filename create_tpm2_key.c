@@ -34,6 +34,8 @@ static struct option long_options[] = {
 	{"wrap", 1, 0, 'w'},
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
+	{"rsa", 0, 0, 'r'},
+	{"ecc", 1, 0, 'e'},
 	{0, 0, 0, 0}
 };
 
@@ -53,6 +55,9 @@ usage(char *argv0)
 		"\t-v, --version                 print package version\n"
 		"\t-w, --wrap <file>             wrap an existing openssl PEM key\n"
 		"\t-k, --password <pwd>          use this password instead of prompting\n"
+		"\t-r, --rsa                     create an RSA key (the default)\n"
+		"\t-e, --ecc <curve>             Create an ECC key using the specified curve.\n"
+		"\t                              Supported curves are bnp256, nisp256, nisp384\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -131,6 +136,25 @@ void tpm2_public_template_rsa(TPMT_PUBLIC *pub)
 	pub->authPolicy.t.size = 0;
 	pub->parameters.rsaDetail.symmetric.algorithm = TPM_ALG_NULL;
 	pub->parameters.rsaDetail.scheme.scheme = TPM_ALG_NULL;
+}
+
+void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve)
+{
+	pub->type = TPM_ALG_ECC;
+	pub->nameAlg = name_alg;
+	/* note: all our keys are decrypt only.  This is because
+	 * we use the TPM2_RSA_Decrypt operation for both signing
+	 * and decryption (see e_tpm2.c for details) */
+	pub->objectAttributes.val = TPMA_OBJECT_NODA |
+		TPMA_OBJECT_SIGN |
+		TPMA_OBJECT_USERWITHAUTH;
+	pub->authPolicy.t.size = 0;
+	pub->parameters.eccDetail.symmetric.algorithm = TPM_ALG_NULL;
+	pub->parameters.eccDetail.scheme.scheme = TPM_ALG_NULL;
+	pub->parameters.eccDetail.curveID = curve;
+	pub->parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
+	pub->unique.ecc.x.t.size = 0;
+	pub->unique.ecc.y.t.size = 0;
 }
 
 TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
@@ -244,11 +268,13 @@ int main(int argc, char **argv)
 	TPM2B_PUBLIC *pub;
 	TPM2B_PRIVATE *priv;
 	char *key = NULL;
+	TPMI_ECC_CURVE ecc = TPM_ECC_NONE;
+	int rsa = -1;
 
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ap:hw:vk:",
+		c = getopt_long(argc, argv, "n:s:ap:hw:vk:re:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -281,7 +307,7 @@ int main(int argc, char **argv)
 			case 'p':
 				parent = strtol(optarg, NULL, 16);
 				break;
-			case's':
+			case 's':
 				key_size = atoi(optarg);
 				break;
 			case 'w':
@@ -298,6 +324,16 @@ int main(int argc, char **argv)
 				key = optarg;
 				if (strlen(key) > 127) {
 					printf("password is too long\n");
+					exit(1);
+				}
+				break;
+			case 'r':
+				rsa = 1;
+				break;
+			case 'e':
+				ecc = tpm2_curve_name_to_TPMI(optarg);
+				if (ecc == TPM_ECC_NONE) {
+					printf("Unknown Curve\n");
 					exit(1);
 				}
 				break;
@@ -321,6 +357,13 @@ int main(int argc, char **argv)
 	} else if (!key_size && !wrap) {
 		/* for internal create, use default key size */
 		key_size = 2048;
+	}
+
+	if (rsa == 1 && ecc != TPM_ECC_NONE) {
+		printf("Cannot specify both --rsa and --ecc\n");
+		exit(1);
+	} else if (ecc != TPM_ECC_NONE) {
+		rsa = 0;
 	}
 
 	if (parent && (parent & 0xff000000) != 0x81000000) {
@@ -427,7 +470,16 @@ int main(int argc, char **argv)
 		Create_In cin;
 		Create_Out cout;
 
-		tpm2_public_template_rsa(&cin.inPublic.publicArea);
+		if (rsa) {
+			tpm2_public_template_rsa(&cin.inPublic.publicArea);
+			cin.inPublic.publicArea.parameters.rsaDetail.keyBits = key_size;
+			cin.inPublic.publicArea.parameters.rsaDetail.exponent = 0;
+			cin.inPublic.publicArea.unique.rsa.t.size = 0;
+
+		} else {
+			tpm2_public_template_ecc(&cin.inPublic.publicArea, ecc);
+		}
+
 		cin.inPublic.publicArea.objectAttributes.val |=
 			TPMA_OBJECT_SENSITIVEDATAORIGIN;
 		if (auth) {
@@ -442,9 +494,6 @@ int main(int argc, char **argv)
 		cin.parentHandle = parent;
 		cin.outsideInfo.t.size = 0;
 		cin.creationPCR.count = 0;
-		cin.inPublic.publicArea.parameters.rsaDetail.keyBits = key_size;
-		cin.inPublic.publicArea.parameters.rsaDetail.exponent = 0;
-		cin.inPublic.publicArea.unique.rsa.t.size = 0;
 
 		rc = TSS_Execute(tssContext,
 				 (RESPONSE_PARAMETERS *)&cout,

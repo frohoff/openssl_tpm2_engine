@@ -20,6 +20,16 @@
 
 #include "tpm2-common.h"
 
+/*
+ * Mutually supported curves: curves both the TPM2 and
+ * openssl support (this excludes BN P256)
+ */
+struct tpm2_ECC_Curves tpm2_supported_curves[] = {
+	{ "prime256v1", NID_X9_62_prime256v1, TPM_ECC_NIST_P256 },
+	{ "secp384r1", NID_secp384r1, TPM_ECC_NIST_P384 },
+	{ NULL, 0, 0 }
+};
+
 void tpm2_error(TPM_RC rc, const char *reason)
 {
 	const char *msg, *submsg, *num;
@@ -117,6 +127,39 @@ void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h)
 		    TPM_RH_NULL, NULL, 0);
 }
 
+static EVP_PKEY *tpm2_to_openssl_public_ecc(TPMT_PUBLIC *pub)
+{
+	EC_KEY *eck = EC_KEY_new();
+	EVP_PKEY *pkey;
+	EC_GROUP *g;
+	BIGNUM *x, *y;
+	const int nid = tpm2_curve_name_to_nid(pub->parameters.eccDetail.curveID);
+
+	if (!eck || !nid)
+		return NULL;
+	pkey = EVP_PKEY_new();
+	if (!pkey)
+		goto err_free_eck;
+	g = EC_GROUP_new_by_curve_name(nid);
+	if (!g)
+		goto err_free_pkey;
+	EC_KEY_set_group(eck, g);
+	x = BN_bin2bn(pub->unique.ecc.x.t.buffer, pub->unique.ecc.x.t.size, NULL);
+	y = BN_bin2bn(pub->unique.ecc.y.t.buffer, pub->unique.ecc.y.t.size, NULL);
+	EC_KEY_set_public_key_affine_coordinates(eck, x, y);
+	if (!EVP_PKEY_assign_EC_KEY(pkey, eck))
+		goto err_free_pkey;
+
+	return pkey;
+
+ err_free_pkey:
+	EVP_PKEY_free(pkey);
+ err_free_eck:
+	EC_KEY_free(eck);
+
+	return NULL;
+}
+
 static EVP_PKEY *tpm2_to_openssl_public_rsa(TPMT_PUBLIC *pub)
 {
 	RSA *rsa = RSA_new();
@@ -171,6 +214,8 @@ EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub)
 	switch (pub->type) {
 	case TPM_ALG_RSA:
 		return tpm2_to_openssl_public_rsa(pub);
+	case TPM_ALG_ECC:
+		return tpm2_to_openssl_public_ecc(pub);
 	default:
 		break;
 	}
@@ -342,4 +387,26 @@ TPM_RC tpm2_ObjectPublic_GetName(TPM2B_NAME *name,
 		name->t.size = sizeInBytes + sizeof(TPMI_ALG_HASH);
 	}
 	return rc;
+}
+
+TPMI_ECC_CURVE tpm2_curve_name_to_TPMI(const char *name)
+{
+	int i;
+
+	for (i = 0; tpm2_supported_curves[i].name != NULL; i++)
+		if (strcmp(name, tpm2_supported_curves[i].name) == 0)
+			return tpm2_supported_curves[i].curve;
+
+	return TPM_ECC_NONE;
+}
+
+int tpm2_curve_name_to_nid(TPMI_ECC_CURVE curve)
+{
+	int i;
+
+	for (i = 0; tpm2_supported_curves[i].name != NULL; i++)
+		if (tpm2_supported_curves[i].curve == curve)
+			return tpm2_supported_curves[i].nid;
+
+	return 0;
 }

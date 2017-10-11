@@ -3,6 +3,7 @@ TESTS = start_sw_tpm.sh \
 	check_auth.sh \
 	wrap_tpm_key.sh \
 	check_wrap_auth.sh \
+	create_ecc.sh \
 	stop_sw_tpm.sh
 
 AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
