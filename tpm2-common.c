@@ -27,6 +27,8 @@
 struct tpm2_ECC_Curves tpm2_supported_curves[] = {
 	{ "prime256v1", NID_X9_62_prime256v1, TPM_ECC_NIST_P256 },
 	{ "secp384r1", NID_secp384r1, TPM_ECC_NIST_P384 },
+	/* openssl unknown algorithms */
+	{ "bnp256", 0, TPM_ECC_BN_P256 },
 	{ NULL, 0, 0 }
 };
 
@@ -127,18 +129,100 @@ void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h)
 		    TPM_RH_NULL, NULL, 0);
 }
 
-static EC_GROUP *tpm2_get_ecc_group(TPMS_ECC_PARMS *p)
+int tpm2_get_ecc_group(EC_KEY *eck, TPMI_ECC_CURVE curveID)
 {
-	const int nid = tpm2_curve_name_to_nid(p->curveID);
+	const int nid = tpm2_curve_name_to_nid(curveID);
+	BN_CTX *ctx = NULL;
+	BIGNUM *p, *a, *b, *gX, *gY, *n, *h;
+	ECC_Parameters_In in;
+	ECC_Parameters_Out out;
+	TSS_CONTEXT *tssContext = NULL;
+	TPM_RC rc;
+	EC_GROUP *g = NULL;
+	EC_POINT *P = NULL;
+	int ret = 0;
 
-	return EC_GROUP_new_by_curve_name(nid);
+	if (nid) {
+		g = EC_GROUP_new_by_curve_name(nid);
+		goto out;
+	}
+
+	/* openssl doesn't have a nid for the curve, so need
+	 * to set the exact parameters in the key */
+	rc = TSS_Create(&tssContext);
+	if (rc) {
+		tpm2_error(rc, "TSS_Create");
+		goto err;
+	}
+	in.curveID = curveID;
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_ECC_Parameters,
+			 TPM_RH_NULL, NULL, 0);
+	TSS_Delete(tssContext);
+
+	if (rc) {
+		tpm2_error(rc, "TPM2_ECC_Parameters");
+		goto err;
+	}
+
+	ctx = BN_CTX_new();
+	if (!ctx)
+		goto err;
+
+	BN_CTX_start(ctx);
+	p = BN_CTX_get(ctx);
+	a = BN_CTX_get(ctx);
+	b = BN_CTX_get(ctx);
+	gX = BN_CTX_get(ctx);
+	gY = BN_CTX_get(ctx);
+	n = BN_CTX_get(ctx);
+	h = BN_CTX_get(ctx);
+
+	if (!p || !a || !b || !gX || !gY || !n || !h)
+		goto err;
+
+	BN_bin2bn(out.parameters.p.t.buffer, out.parameters.p.t.size, p);
+	BN_bin2bn(out.parameters.a.t.buffer, out.parameters.a.t.size, a);
+	BN_bin2bn(out.parameters.b.t.buffer, out.parameters.b.t.size, b);
+	BN_bin2bn(out.parameters.gX.t.buffer, out.parameters.gX.t.size, gX);
+	BN_bin2bn(out.parameters.gY.t.buffer, out.parameters.gY.t.size, gY);
+	BN_bin2bn(out.parameters.n.t.buffer, out.parameters.n.t.size, n);
+	BN_bin2bn(out.parameters.h.t.buffer, out.parameters.h.t.size, h);
+
+	g = EC_GROUP_new_curve_GFp(p, a, b, ctx);
+	if (!g)
+		goto err;
+
+	P = EC_POINT_new(g);
+	if (!P)
+		goto err;
+	if (!EC_POINT_set_affine_coordinates_GFp(g, P, gX, gY, ctx))
+		goto err;
+	if (!EC_GROUP_set_generator(g, P, n, h))
+		goto err;
+ out:
+	ret = 1;
+	EC_KEY_set_group(eck, g);
+
+ err:
+	if (P)
+		EC_POINT_free(P);
+	if (g)
+		EC_GROUP_free(g);
+	if (ctx) {
+		BN_CTX_end(ctx);
+		BN_CTX_free(ctx);
+	}
+	return ret;
 }
 
 static EVP_PKEY *tpm2_to_openssl_public_ecc(TPMT_PUBLIC *pub)
 {
 	EC_KEY *eck = EC_KEY_new();
 	EVP_PKEY *pkey;
-	EC_GROUP *g;
 	BIGNUM *x, *y;
 
 	if (!eck)
@@ -146,11 +230,8 @@ static EVP_PKEY *tpm2_to_openssl_public_ecc(TPMT_PUBLIC *pub)
 	pkey = EVP_PKEY_new();
 	if (!pkey)
 		goto err_free_eck;
-	g = tpm2_get_ecc_group(&pub->parameters.eccDetail);
-	if (!g)
+	if (!tpm2_get_ecc_group(eck, pub->parameters.eccDetail.curveID))
 		goto err_free_pkey;
-	EC_KEY_set_group(eck, g);
-	EC_GROUP_free(g);
 	x = BN_bin2bn(pub->unique.ecc.x.t.buffer, pub->unique.ecc.x.t.size, NULL);
 	y = BN_bin2bn(pub->unique.ecc.y.t.buffer, pub->unique.ecc.y.t.size, NULL);
 	EC_KEY_set_public_key_affine_coordinates(eck, x, y);
