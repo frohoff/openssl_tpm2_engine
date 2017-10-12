@@ -59,6 +59,7 @@ usage(char *argv0)
 		"\t-r, --rsa                     create an RSA key (the default)\n"
 		"\t-e, --ecc <curve>             Create an ECC key using the specified curve.\n"
 		"\t                              Supported curves are bnp256, nisp256, nisp384\n"
+		"\t-l, --list-curves             List all the Elliptic Curves the TPM supports\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
