@@ -147,10 +147,8 @@ static TPM_HANDLE tpm2_load_key_from_ecc(EC_KEY *eck, TSS_CONTEXT **tssContext, 
 {
 	struct app_data *app_data = ECDSA_get_ex_data(eck, ec_app_data);
 
-	if (!app_data) {
-		printf("FAILED TO GET APP DATA FROM %p\n", eck);
+	if (!app_data)
 		return 0;
-	}
 
 	*auth = app_data->auth;
 	*tssContext = app_data->tssContext;
@@ -558,17 +556,13 @@ static int tpm2_bind_helper(ENGINE * e)
 {
 	if (!ENGINE_set_id(e, engine_tpm2_id) ||
 	    !ENGINE_set_name(e, engine_tpm2_name) ||
-#ifndef OPENSSL_NO_RSA
-	    !ENGINE_set_RSA(e, &tpm2_rsa) ||
-#endif
 	    !ENGINE_set_init_function(e, tpm2_engine_init) ||
 	    !ENGINE_set_finish_function(e, tpm2_engine_finish) ||
 	    !ENGINE_set_ctrl_function(e, tpm2_engine_ctrl) ||
 	    !ENGINE_set_load_pubkey_function(e, tpm2_engine_load_key) ||
 	    !ENGINE_set_load_privkey_function(e, tpm2_engine_load_key) ||
 	    !ENGINE_set_cmd_defns(e, tpm2_cmd_defns) ||
-	    !tpm2_setup_ecdsa_methods() ||
-	    !ENGINE_set_ECDSA(e, tpm2_ecdsa))
+	    !tpm2_setup_ecdsa_methods())
 		return 0;
 
 	return 1;
@@ -645,12 +639,9 @@ static int tpm2_rsa_priv_dec(int flen,
 	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
 
 	if (in.keyHandle == 0) {
-		rv = RSA_PKCS1_SSLeay()->rsa_priv_dec(flen, from, to, rsa,
-						      padding);
-		if (rv < 0)
-			fprintf(stderr, "rsa_priv_dec failed\n");
+		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
 
-		return rv;
+		return -1;
 	}
 
 	rv = -1;
@@ -723,12 +714,9 @@ static int tpm2_rsa_priv_enc(int flen,
 	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
 
 	if (in.keyHandle == 0) {
-		rv = RSA_PKCS1_SSLeay()->rsa_priv_enc(flen, from, to, rsa,
-						      padding);
-		if (rv < 0)
-			fprintf(stderr, "pass through signing failed\n");
+		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
 
-		return rv;
+		return -1;
 	}
 
 	rv = -1;
