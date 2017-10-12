@@ -23,10 +23,6 @@ TPM_RC tpm2_ObjectPublic_GetName(TPM2B_NAME *name,
 TPMI_ECC_CURVE tpm2_curve_name_to_TPMI(const char *name);
 int tpm2_curve_name_to_nid(TPMI_ECC_CURVE curve);
 TPMI_ECC_CURVE tpm2_nid_to_curve_name(int nid);
+TPMI_ECC_CURVE tpm2_get_curve_name(const EC_GROUP *g);
 
-struct tpm2_ECC_Curves {
-	const char *name;
-	int nid;
-	TPMI_ECC_CURVE curve;
-};
 #endif

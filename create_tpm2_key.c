@@ -162,19 +162,10 @@ TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 	EC_KEY *eck = EVP_PKEY_get1_EC_KEY(pkey);
 	const EC_GROUP *g = EC_KEY_get0_group(eck);
 	const EC_POINT *P;
-	int nid = EC_GROUP_get_curve_name(g);
-	TPMI_ECC_CURVE curve;
+	TPMI_ECC_CURVE curve = tpm2_get_curve_name(g);
 	TPM_RC rc = TPM_RC_CURVE;
 	BN_CTX *ctx = NULL;
 	BIGNUM *x, *y;
-
-	if (!nid) {
-		/* FIXME: could be bnp256 */
-		fprintf(stderr, "Error: openssl has no NID for this curve\n");
-		goto err;
-	}
-
-        curve = tpm2_nid_to_curve_name(nid);
 
 	if (curve == TPM_ECC_NONE) {
 		fprintf(stderr, "TPM does not support the curve in this EC key\n");
