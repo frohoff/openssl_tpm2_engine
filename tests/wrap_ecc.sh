@@ -8,7 +8,11 @@ bindir=${srcdir}/..
 # 2. wrap the private key to the TPM
 # 3. Create a self signed x509 certificate
 # 4. verify the certificate
-for curve in prime256v1 secp384r1; do
+for curve in $(${bindir}/create_tpm2_key --list-curves); do
+    if openssl ecparam -name ${curve} 2>&1 | grep 'unknown curve'; then
+	continue
+    fi
+    echo "Checking curve ${curve}"
     openssl ecparam -genkey -name ${curve} > tmp.param && \
     openssl genpkey -paramfile tmp.param -out key.priv && \
     ${bindir}/create_tpm2_key -p 81000001 -w key.priv key.tpm && \
