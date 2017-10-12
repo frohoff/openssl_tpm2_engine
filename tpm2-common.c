@@ -744,3 +744,14 @@ TPMI_ECC_CURVE tpm2_get_curve_name(const EC_GROUP *g)
 
 	return curve;
 }
+
+const char *tpm2_curve_name_to_text(TPMI_ECC_CURVE curve)
+{
+	int i;
+
+	for (i = 0; tpm2_supported_curves[i].name != NULL; i++)
+		if (tpm2_supported_curves[i].curve == curve)
+			return tpm2_supported_curves[i].name;
+
+	return NULL;
+}

@@ -24,5 +24,6 @@ TPMI_ECC_CURVE tpm2_curve_name_to_TPMI(const char *name);
 int tpm2_curve_name_to_nid(TPMI_ECC_CURVE curve);
 TPMI_ECC_CURVE tpm2_nid_to_curve_name(int nid);
 TPMI_ECC_CURVE tpm2_get_curve_name(const EC_GROUP *g);
+const char *tpm2_curve_name_to_text(TPMI_ECC_CURVE curve);
 
 #endif

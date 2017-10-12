@@ -36,6 +36,7 @@ static struct option long_options[] = {
 	{"password", 1, 0, 'k'},
 	{"rsa", 0, 0, 'r'},
 	{"ecc", 1, 0, 'e'},
+	{"list-curves", 0, 0, 'l'},
 	{0, 0, 0, 0}
 };
 
@@ -354,6 +355,56 @@ TPM_RC wrap_key(TPMT_SENSITIVE *s, const char *password, EVP_PKEY *pkey)
 	return TPM_RC_SUCCESS;
 }
 
+static void list_curves(void)
+{
+	TSS_CONTEXT *tssContext;
+	GetCapability_In in;
+	GetCapability_Out out;
+	TPML_ECC_CURVE *c;
+	const char *reason;
+	TPM_RC rc;
+	int i;
+
+	rc = TSS_Create(&tssContext);
+	if (rc) {
+		reason = "TSS_Create";
+		goto out_err;
+	}
+
+	in.capability = TPM_CAP_ECC_CURVES;
+	in.property = 0;
+	in.propertyCount = MAX_ECC_CURVES;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_GetCapability,
+			 TPM_RH_NULL, NULL, 0);
+	if (rc) {
+		reason = "TPM2_GetCapability";
+		goto out_err;
+	}
+	TSS_Delete(tssContext);
+
+	c = (TPML_ECC_CURVE *)&(out.capabilityData.data);
+
+	for (i = 0; i < c->count; i++) {
+		const char *name = tpm2_curve_name_to_text(c->eccCurves[i]);
+
+		if (name)
+			printf("%s\n", name);
+		else
+			printf("Curve %d Unsupported\n", c->eccCurves[i]);
+	}
+
+	return;
+ out_err:
+	tpm2_error(rc, reason);
+
+	exit(1);
+}
+
 int main(int argc, char **argv)
 {
 	char *filename, *wrap = NULL, *auth = NULL;
@@ -374,7 +425,7 @@ int main(int argc, char **argv)
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ap:hw:vk:re:",
+		c = getopt_long(argc, argv, "n:s:ap:hw:vk:re:l",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -437,6 +488,9 @@ int main(int argc, char **argv)
 					exit(1);
 				}
 				break;
+			case 'l':
+				list_curves();
+				exit(0);
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
