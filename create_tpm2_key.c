@@ -457,7 +457,7 @@ int main(int argc, char **argv)
 				}
 				break;
 			case 'p':
-				parent = strtol(optarg, NULL, 16);
+				parent = strtoul(optarg, NULL, 16);
 				break;
 			case 's':
 				key_size = atoi(optarg);
