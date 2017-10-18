@@ -10,7 +10,7 @@ openssl_enginedir=@enginesdir@
 
 libtpm2_la_LDFLAGS= -no-undefined -avoid-version
 libtpm2_la_LIBADD=-lcrypto -ltss
-libtpm2_la_SOURCES=e_tpm2.c tpm2-common.c
+libtpm2_la_SOURCES=e_tpm2.c e_tpm2-rsa.c e_tpm2-ecc.c tpm2-common.c
 libtpm2_la_CFLAGS=-g -Werror
 
 create_tpm2_key_SOURCES=create_tpm2_key.c tpm2-common.c

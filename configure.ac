@@ -58,7 +58,7 @@ AC_LANG_CONFTEST(
 		  puts(OpenSSL_version(OPENSSL_ENGINES_DIR));
 		  #endif
 		  ]])])
-gcc $CFLAGS conftest.c
+gcc $CFLAGS conftest.c -lcrypto
 enginesdir=`./a.out`
 if test -z "$enginesdir" ; then
     AC_MSG_FAILURE([Failed to find SSL engines directory])

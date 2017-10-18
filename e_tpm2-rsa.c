@@ -1,0 +1,284 @@
+/*
+ * Copyright (C) 2017 James.Bottomley@HansenPartnership.com
+ *
+ * GPLv2
+ *
+ */
+
+#include <stdio.h>
+#include <string.h>
+
+#include <openssl/crypto.h>
+#include <openssl/ec.h>
+#include <openssl/engine.h>
+#include <openssl/evp.h>
+#include <openssl/objects.h>
+#include <openssl/sha.h>
+#include <openssl/bn.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+
+#include <tss2/tss.h>
+#include <tss2/tssutils.h>
+#include <tss2/tssmarshal.h>
+#include <tss2/tssresponsecode.h>
+#include <tss2/Unmarshal_fp.h>
+
+#include "tpm2-common.h"
+#include "e_tpm2.h"
+
+
+/* varibles used to get/set CRYPTO_EX_DATA values */
+static int ex_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
+
+/* rsa functions */
+static int tpm2_rsa_init(RSA *rsa);
+static int tpm2_rsa_finish(RSA *rsa);
+static int tpm2_rsa_pub_dec(int, const unsigned char *, unsigned char *, RSA *, int);
+static int tpm2_rsa_pub_enc(int, const unsigned char *, unsigned char *, RSA *, int);
+static int tpm2_rsa_priv_dec(int, const unsigned char *, unsigned char *, RSA *, int);
+static int tpm2_rsa_priv_enc(int, const unsigned char *, unsigned char *, RSA *, int);
+//static int tpm2_rsa_sign(int, const unsigned char *, unsigned int, unsigned char *, unsigned int *, const RSA *);
+
+static RSA_METHOD tpm2_rsa = {
+	"TPM2 RSA method",
+	tpm2_rsa_pub_enc,
+	tpm2_rsa_pub_dec,
+	tpm2_rsa_priv_enc,
+	tpm2_rsa_priv_dec,
+	NULL, /* set in tpm2_engine_init */
+	BN_mod_exp_mont,
+	tpm2_rsa_init,
+	tpm2_rsa_finish,
+	(RSA_FLAG_SIGN_VER | RSA_FLAG_NO_BLINDING),
+	NULL,
+	NULL, /* sign */
+	NULL, /* verify */
+	NULL, /* keygen */
+};
+
+static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, char **auth)
+{
+	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
+
+	if (!app_data)
+		return 0;
+
+	*auth = app_data->auth;
+	*tssContext = app_data->tssContext;
+
+	return app_data->key;
+}
+
+void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
+{
+	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
+
+	rsa->meth = &tpm2_rsa;
+	/* call our local init function here */
+	rsa->meth->init(rsa);
+
+	RSA_set_ex_data(rsa, ex_app_data, data);
+
+	/* release the reference EVP_PKEY_get1_RSA obtained */
+	RSA_free(rsa);
+}
+
+static int tpm2_rsa_init(RSA *rsa)
+{
+	if (ex_app_data == TPM2_ENGINE_EX_DATA_UNINIT)
+		ex_app_data = RSA_get_ex_new_index(0, NULL, NULL, NULL, NULL);
+
+	if (ex_app_data == TPM2_ENGINE_EX_DATA_UNINIT) {
+		fprintf(stderr, "Failed to get memory for external data\n");
+		return 0;
+	}
+
+	return 1;
+}
+
+static int tpm2_rsa_finish(RSA *rsa)
+{
+	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
+	TSS_CONTEXT *tssContext;
+
+	if (!app_data)
+		return 1;
+
+	tssContext = app_data->tssContext;
+
+	tpm2_flush_handle(tssContext, app_data->key);
+	if (app_data->parent == 0)
+		tpm2_flush_srk(tssContext);
+
+	OPENSSL_free(app_data);
+
+	TSS_Delete(tssContext);
+
+	return 1;
+}
+
+static int tpm2_rsa_pub_dec(int flen,
+			   const unsigned char *from,
+			   unsigned char *to,
+			   RSA *rsa,
+			   int padding)
+{
+	int rv;
+
+	rv = RSA_PKCS1_SSLeay()->rsa_pub_dec(flen, from, to, rsa,
+					     padding);
+	if (rv < 0) {
+		fprintf(stderr, "rsa_pub_dec failed\n");
+		return 0;
+	}
+
+	return rv;
+}
+
+static int tpm2_rsa_priv_dec(int flen,
+			    const unsigned char *from,
+			    unsigned char *to,
+			    RSA *rsa,
+			    int padding)
+{
+	TPM_RC rc;
+	int rv;
+	RSA_Decrypt_In in;
+	RSA_Decrypt_Out out;
+	TSS_CONTEXT *tssContext;
+	char *auth;
+	TPM_HANDLE authHandle;
+
+	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
+
+	if (in.keyHandle == 0) {
+		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
+
+		return -1;
+	}
+
+	rv = -1;
+	if (padding != RSA_PKCS1_PADDING) {
+		fprintf(stderr, "Non PKCS1 padding asked for\n");
+		return rv;
+	}
+
+	in.inScheme.scheme = TPM_ALG_RSAES;
+	in.cipherText.t.size = flen;
+	memcpy(in.cipherText.t.buffer, from, flen);
+	in.label.t.size = 0;
+
+	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
+	if (rc)
+		return rv;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_RSA_Decrypt,
+			 authHandle, auth, 0,
+			 TPM_RH_NULL, NULL, 0);
+	if (rc) {
+		tpm2_error(rc, "TPM2_RSA_Decrypt");
+		/* failure means auth handle is not flushed */
+		tpm2_flush_handle(tssContext, authHandle);
+		return rv;
+	}
+ 
+	memcpy(to, out.message.t.buffer,
+	       out.message.t.size);
+
+	rv = out.message.t.size;
+
+	return rv;
+}
+
+static int tpm2_rsa_pub_enc(int flen,
+			   const unsigned char *from,
+			   unsigned char *to,
+			   RSA *rsa,
+			   int padding)
+{
+	int rv;
+
+	rv = RSA_PKCS1_SSLeay()->rsa_pub_enc(flen, from, to, rsa,
+					     padding);
+	if (rv < 0)
+		fprintf(stderr, "rsa_pub_enc failed\n");
+
+	return rv;
+}
+
+static int tpm2_rsa_priv_enc(int flen,
+			    const unsigned char *from,
+			    unsigned char *to,
+			    RSA *rsa,
+			    int padding)
+{
+	TPM_RC rc;
+	int rv, size;
+	RSA_Decrypt_In in;
+	RSA_Decrypt_Out out;
+	TSS_CONTEXT *tssContext;
+	char *auth;
+	TPM_HANDLE authHandle;
+
+	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
+
+	if (in.keyHandle == 0) {
+		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
+
+		return -1;
+	}
+
+	rv = -1;
+	if (padding != RSA_PKCS1_PADDING) {
+		fprintf(stderr, "Non PKCS1 padding asked for\n");
+		return rv;
+	}
+
+	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
+	if (rc)
+		return rv;
+
+	/* this is slightly paradoxical that we're doing a Decrypt
+	 * operation: the only material difference between decrypt and
+	 * encrypt is where the padding is applied or checked, so if
+	 * you apply your own padding up to the RSA block size and use
+	 * TPM_ALG_NULL, which means no padding check, a decrypt
+	 * operation effectively becomes an encrypt */
+	size = RSA_size(rsa);
+	in.inScheme.scheme = TPM_ALG_NULL;
+	in.cipherText.t.size = size;
+	RSA_padding_add_PKCS1_type_1(in.cipherText.t.buffer, size, from, flen);
+	in.label.t.size = 0;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_RSA_Decrypt,
+			 authHandle, auth, 0,
+			 TPM_RH_NULL, NULL, 0);
+
+	if (rc) {
+		tpm2_error(rc, "TPM2_RSA_Decrypt");
+		/* failure means auth handle is not flushed */
+		tpm2_flush_handle(tssContext, authHandle);
+		return rv;
+	}
+
+	memcpy(to, out.message.t.buffer,
+	       out.message.t.size);
+
+	rv = out.message.t.size;
+
+	return rv;
+}
+
+int tpm2_setup_rsa_methods(void)
+{
+	return 1;
+}

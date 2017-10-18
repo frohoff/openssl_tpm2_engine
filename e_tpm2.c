@@ -10,15 +10,9 @@
 #include <string.h>
 
 #include <openssl/crypto.h>
-#include <openssl/dso.h>
-#include <openssl/ec.h>
 #include <openssl/engine.h>
 #include <openssl/evp.h>
-#include <openssl/objects.h>
-#include <openssl/sha.h>
-#include <openssl/bn.h>
 #include <openssl/pem.h>
-#include <openssl/x509.h>
 
 #include <tss2/tss.h>
 #include <tss2/tssutils.h>
@@ -28,17 +22,7 @@
 
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
-
-#define TPM2_ENGINE_EX_DATA_UNINIT		-1
-
-/* structure pointed to by the RSA object's app_data pointer */
-struct app_data
-{
-	TSS_CONTEXT *tssContext;
-	TPM_HANDLE parent;
-	TPM_HANDLE key;
-	char *auth;
-};
+#include "e_tpm2.h"
 
 static char *srk_auth;
 
@@ -82,18 +66,6 @@ static int tpm2_engine_ctrl(ENGINE * e, int cmd, long i, void *p, void (*f) ())
 	return 0;
 }
 
-
-#ifndef OPENSSL_NO_RSA
-/* rsa functions */
-static int tpm2_rsa_init(RSA *rsa);
-static int tpm2_rsa_finish(RSA *rsa);
-static int tpm2_rsa_pub_dec(int, const unsigned char *, unsigned char *, RSA *, int);
-static int tpm2_rsa_pub_enc(int, const unsigned char *, unsigned char *, RSA *, int);
-static int tpm2_rsa_priv_dec(int, const unsigned char *, unsigned char *, RSA *, int);
-static int tpm2_rsa_priv_enc(int, const unsigned char *, unsigned char *, RSA *, int);
-//static int tpm2_rsa_sign(int, const unsigned char *, unsigned int, unsigned char *, unsigned int *, const RSA *);
-#endif
-
 /* The definitions for control commands specific to this engine */
 #define TPM2_CMD_PIN		ENGINE_CMD_BASE
 static const ENGINE_CMD_DEFN tpm2_cmd_defns[] = {
@@ -104,57 +76,6 @@ static const ENGINE_CMD_DEFN tpm2_cmd_defns[] = {
 	/* end */
 	{0, NULL, NULL, 0}
 };
-
-#ifndef OPENSSL_NO_RSA
-static RSA_METHOD tpm2_rsa = {
-	"TPM2 RSA method",
-	tpm2_rsa_pub_enc,
-	tpm2_rsa_pub_dec,
-	tpm2_rsa_priv_enc,
-	tpm2_rsa_priv_dec,
-	NULL, /* set in tpm2_engine_init */
-	BN_mod_exp_mont,
-	tpm2_rsa_init,
-	tpm2_rsa_finish,
-	(RSA_FLAG_SIGN_VER | RSA_FLAG_NO_BLINDING),
-	NULL,
-	NULL, /* sign */
-	NULL, /* verify */
-	NULL, /* keygen */
-};
-#endif
-
-static ECDSA_METHOD *tpm2_ecdsa;
-
-/* varibles used to get/set CRYPTO_EX_DATA values */
-static int ex_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
-static int ec_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
-
-static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, char **auth)
-{
-	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
-
-	if (!app_data)
-		return 0;
-
-	*auth = app_data->auth;
-	*tssContext = app_data->tssContext;
-
-	return app_data->key;
-}
-
-static TPM_HANDLE tpm2_load_key_from_ecc(EC_KEY *eck, TSS_CONTEXT **tssContext, char **auth)
-{
-	struct app_data *app_data = ECDSA_get_ex_data(eck, ec_app_data);
-
-	if (!app_data)
-		return 0;
-
-	*auth = app_data->auth;
-	*tssContext = app_data->tssContext;
-
-	return app_data->key;
-}
 
 struct tpm_ui {
 	UI_METHOD *ui_method;
@@ -229,32 +150,6 @@ static char *tpm2_get_auth(struct tpm_ui *ui, char *input_string,
 		return tpm2_get_auth_ui(ui->ui_method, input_string, cb_data);
 	else
 		return tpm2_get_auth_pem(ui->pem_cb, input_string, cb_data);
-}
-
-void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
-{
-	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
-
-	rsa->meth = &tpm2_rsa;
-	/* call our local init function here */
-	rsa->meth->init(rsa);
-
-	RSA_set_ex_data(rsa, ex_app_data, data);
-
-	/* release the reference EVP_PKEY_get1_RSA obtained */
-	RSA_free(rsa);
-}
-
-void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)
-{
-	EC_KEY *eck = EVP_PKEY_get1_EC_KEY(pkey);
-
-	if (!ECDSA_set_ex_data(eck, ec_app_data, data))
-		fprintf(stderr, "Failed to bind key to engine (ecc ex_data)\n");
-	else
-		ECDSA_set_method(eck, tpm2_ecdsa);
-
-	EC_KEY_free(eck);
 }
 
 void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
@@ -421,100 +316,6 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	return 0;
 }
 
-static void tpm2_ecdsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
-			   int idx, long argl, void *argp)
-{
-	struct app_data *data = ptr;
-
-	if (!data)
-		return;
-
-	tpm2_flush_handle(data->tssContext, data->key);
-	if (data->parent == 0)
-		tpm2_flush_srk(data->tssContext);
-
-	TSS_Delete(data->tssContext);
-
-	OPENSSL_free(data);
-}
-
-static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
-				  const BIGNUM *kinv, const BIGNUM *rp,
-				  EC_KEY *eck)
-{
-	TPM_RC rc;
-	Sign_In in;
-	Sign_Out out;
-	TSS_CONTEXT *tssContext;
-	char *auth;
-	TPM_HANDLE authHandle;
-	ECDSA_SIG *sig;
-
-	/* The TPM insists on knowing the digest type, so
-	 * calculate that from the size */
-	switch (dgst_len) {
-	case SHA_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA1;
-		break;
-	case SHA256_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA256;
-		break;
-	case SHA384_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA384;
-		break;
-#ifdef TPM_ALG_SHA512
-	case SHA512_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA512;
-		break;
-#endif
-	default:
-		printf("ECDSA signature: Unknown digest length, cannot deduce hash type for TPM\n");
-		return NULL;
-	}
-
-	in.keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth);
-	if (in.keyHandle == 0) {
-		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
-		return NULL;
-	}
-
-	in.inScheme.scheme = TPM_ALG_ECDSA;
-	in.digest.t.size = dgst_len;
-	memcpy(in.digest.t.buffer, dgst, dgst_len);
-	in.validation.tag = TPM_ST_HASHCHECK;
-	in.validation.hierarchy = TPM_RH_NULL;
-	in.validation.digest.t.size = 0;
-	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
-	if (rc)
-		return NULL;
-
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_Sign,
-			 authHandle, auth, 0,
-			 TPM_RH_NULL, NULL, 0);
-	if (rc) {
-		tpm2_error(rc, "TPM2_Sign");
-		tpm2_flush_handle(tssContext, authHandle);
-		return NULL;
-	}
-
-	sig = ECDSA_SIG_new();
-	if (!sig)
-		return NULL;
-
-	sig->r = BN_bin2bn(out.signature.signature.ecdsa.signatureR.t.buffer,
-			   out.signature.signature.ecdsa.signatureR.t.size,
-			   NULL);
-	sig->s = BN_bin2bn(out.signature.signature.ecdsa.signatureS.t.buffer,
-			   out.signature.signature.ecdsa.signatureS.t.size,
-			   NULL);
-
-	return sig;
-}
-
 static EVP_PKEY *tpm2_engine_load_key(ENGINE *e, const char *key_id,
 				      UI_METHOD *ui, void *cb)
 {
@@ -535,21 +336,6 @@ static EVP_PKEY *tpm2_engine_load_key(ENGINE *e, const char *key_id,
 static const char *engine_tpm2_id = "tpm2";
 static const char *engine_tpm2_name = "TPM2 hardware engine support";
 
-static int tpm2_setup_ecdsa_methods(void)
-{
-	tpm2_ecdsa = ECDSA_METHOD_new(NULL);
-
-	if (!tpm2_ecdsa)
-		return 0;
-
-	ECDSA_METHOD_set_name(tpm2_ecdsa, (char *)engine_tpm2_name);
-	ECDSA_METHOD_set_sign(tpm2_ecdsa, tpm2_ecdsa_sign);
-
-	ec_app_data =  ECDSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_ecdsa_free);
-
-	return 1;
-}
-
 /* This internal function is used by ENGINE_tpm() and possibly by the
  * "dynamic" ENGINE support too */
 static int tpm2_bind_helper(ENGINE * e)
@@ -562,209 +348,13 @@ static int tpm2_bind_helper(ENGINE * e)
 	    !ENGINE_set_load_pubkey_function(e, tpm2_engine_load_key) ||
 	    !ENGINE_set_load_privkey_function(e, tpm2_engine_load_key) ||
 	    !ENGINE_set_cmd_defns(e, tpm2_cmd_defns) ||
-	    !tpm2_setup_ecdsa_methods())
+	    !tpm2_setup_ecc_methods() ||
+	    !tpm2_setup_rsa_methods())
 		return 0;
 
 	return 1;
 }
 
-
-#ifndef OPENSSL_NO_RSA
-static int tpm2_rsa_init(RSA *rsa)
-{
-	if (ex_app_data == TPM2_ENGINE_EX_DATA_UNINIT)
-		ex_app_data = RSA_get_ex_new_index(0, NULL, NULL, NULL, NULL);
-
-	if (ex_app_data == TPM2_ENGINE_EX_DATA_UNINIT) {
-		fprintf(stderr, "Failed to get memory for external data\n");
-		return 0;
-	}
-
-	return 1;
-}
-
-static int tpm2_rsa_finish(RSA *rsa)
-{
-	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
-	TSS_CONTEXT *tssContext;
-
-	if (!app_data)
-		return 1;
-
-	tssContext = app_data->tssContext;
-
-	tpm2_flush_handle(tssContext, app_data->key);
-	if (app_data->parent == 0)
-		tpm2_flush_srk(tssContext);
-
-	OPENSSL_free(app_data);
-
-	TSS_Delete(tssContext);
-
-	return 1;
-}
-
-static int tpm2_rsa_pub_dec(int flen,
-			   const unsigned char *from,
-			   unsigned char *to,
-			   RSA *rsa,
-			   int padding)
-{
-	int rv;
-
-	rv = RSA_PKCS1_SSLeay()->rsa_pub_dec(flen, from, to, rsa,
-					     padding);
-	if (rv < 0) {
-		fprintf(stderr, "rsa_pub_dec failed\n");
-		return 0;
-	}
-
-	return rv;
-}
-
-static int tpm2_rsa_priv_dec(int flen,
-			    const unsigned char *from,
-			    unsigned char *to,
-			    RSA *rsa,
-			    int padding)
-{
-	TPM_RC rc;
-	int rv;
-	RSA_Decrypt_In in;
-	RSA_Decrypt_Out out;
-	TSS_CONTEXT *tssContext;
-	char *auth;
-	TPM_HANDLE authHandle;
-
-	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
-
-	if (in.keyHandle == 0) {
-		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
-
-		return -1;
-	}
-
-	rv = -1;
-	if (padding != RSA_PKCS1_PADDING) {
-		fprintf(stderr, "Non PKCS1 padding asked for\n");
-		return rv;
-	}
-
-	in.inScheme.scheme = TPM_ALG_RSAES;
-	in.cipherText.t.size = flen;
-	memcpy(in.cipherText.t.buffer, from, flen);
-	in.label.t.size = 0;
-
-	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
-	if (rc)
-		return rv;
-
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_RSA_Decrypt,
-			 authHandle, auth, 0,
-			 TPM_RH_NULL, NULL, 0);
-	if (rc) {
-		tpm2_error(rc, "TPM2_RSA_Decrypt");
-		/* failure means auth handle is not flushed */
-		tpm2_flush_handle(tssContext, authHandle);
-		return rv;
-	}
- 
-	memcpy(to, out.message.t.buffer,
-	       out.message.t.size);
-
-	rv = out.message.t.size;
-
-	return rv;
-}
-
-static int tpm2_rsa_pub_enc(int flen,
-			   const unsigned char *from,
-			   unsigned char *to,
-			   RSA *rsa,
-			   int padding)
-{
-	int rv;
-
-	rv = RSA_PKCS1_SSLeay()->rsa_pub_enc(flen, from, to, rsa,
-					     padding);
-	if (rv < 0)
-		fprintf(stderr, "rsa_pub_enc failed\n");
-
-	return rv;
-}
-
-static int tpm2_rsa_priv_enc(int flen,
-			    const unsigned char *from,
-			    unsigned char *to,
-			    RSA *rsa,
-			    int padding)
-{
-	TPM_RC rc;
-	int rv, size;
-	RSA_Decrypt_In in;
-	RSA_Decrypt_Out out;
-	TSS_CONTEXT *tssContext;
-	char *auth;
-	TPM_HANDLE authHandle;
-
-	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
-
-	if (in.keyHandle == 0) {
-		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
-
-		return -1;
-	}
-
-	rv = -1;
-	if (padding != RSA_PKCS1_PADDING) {
-		fprintf(stderr, "Non PKCS1 padding asked for\n");
-		return rv;
-	}
-
-	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
-	if (rc)
-		return rv;
-
-	/* this is slightly paradoxical that we're doing a Decrypt
-	 * operation: the only material difference between decrypt and
-	 * encrypt is where the padding is applied or checked, so if
-	 * you apply your own padding up to the RSA block size and use
-	 * TPM_ALG_NULL, which means no padding check, a decrypt
-	 * operation effectively becomes an encrypt */
-	size = RSA_size(rsa);
-	in.inScheme.scheme = TPM_ALG_NULL;
-	in.cipherText.t.size = size;
-	RSA_padding_add_PKCS1_type_1(in.cipherText.t.buffer, size, from, flen);
-	in.label.t.size = 0;
-
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_RSA_Decrypt,
-			 authHandle, auth, 0,
-			 TPM_RH_NULL, NULL, 0);
-
-	if (rc) {
-		tpm2_error(rc, "TPM2_RSA_Decrypt");
-		/* failure means auth handle is not flushed */
-		tpm2_flush_handle(tssContext, authHandle);
-		return rv;
-	}
-
-	memcpy(to, out.message.t.buffer,
-	       out.message.t.size);
-
-	rv = out.message.t.size;
-
-	return rv;
-}
-
-#endif
 
 /* This stuff is needed if this ENGINE is being compiled into a self-contained
  * shared-library. */
