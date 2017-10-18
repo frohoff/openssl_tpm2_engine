@@ -31,16 +31,18 @@
 /* varibles used to get/set CRYPTO_EX_DATA values */
 static int ex_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
 
+RSA_METHOD *tpm2_rsa;
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 /* rsa functions */
 static int tpm2_rsa_init(RSA *rsa);
-static int tpm2_rsa_finish(RSA *rsa);
 static int tpm2_rsa_pub_dec(int, const unsigned char *, unsigned char *, RSA *, int);
 static int tpm2_rsa_pub_enc(int, const unsigned char *, unsigned char *, RSA *, int);
 static int tpm2_rsa_priv_dec(int, const unsigned char *, unsigned char *, RSA *, int);
 static int tpm2_rsa_priv_enc(int, const unsigned char *, unsigned char *, RSA *, int);
 //static int tpm2_rsa_sign(int, const unsigned char *, unsigned int, unsigned char *, unsigned int *, const RSA *);
 
-static RSA_METHOD tpm2_rsa = {
+static RSA_METHOD tpm2_rsa_meths = {
 	"TPM2 RSA method",
 	tpm2_rsa_pub_enc,
 	tpm2_rsa_pub_dec,
@@ -49,7 +51,7 @@ static RSA_METHOD tpm2_rsa = {
 	NULL, /* set in tpm2_engine_init */
 	BN_mod_exp_mont,
 	tpm2_rsa_init,
-	tpm2_rsa_finish,
+	NULL,
 	(RSA_FLAG_SIGN_VER | RSA_FLAG_NO_BLINDING),
 	NULL,
 	NULL, /* sign */
@@ -57,64 +59,8 @@ static RSA_METHOD tpm2_rsa = {
 	NULL, /* keygen */
 };
 
-static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, char **auth)
-{
-	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
-
-	if (!app_data)
-		return 0;
-
-	*auth = app_data->auth;
-	*tssContext = app_data->tssContext;
-
-	return app_data->key;
-}
-
-void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
-{
-	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
-
-	rsa->meth = &tpm2_rsa;
-	/* call our local init function here */
-	rsa->meth->init(rsa);
-
-	RSA_set_ex_data(rsa, ex_app_data, data);
-
-	/* release the reference EVP_PKEY_get1_RSA obtained */
-	RSA_free(rsa);
-}
-
 static int tpm2_rsa_init(RSA *rsa)
 {
-	if (ex_app_data == TPM2_ENGINE_EX_DATA_UNINIT)
-		ex_app_data = RSA_get_ex_new_index(0, NULL, NULL, NULL, NULL);
-
-	if (ex_app_data == TPM2_ENGINE_EX_DATA_UNINIT) {
-		fprintf(stderr, "Failed to get memory for external data\n");
-		return 0;
-	}
-
-	return 1;
-}
-
-static int tpm2_rsa_finish(RSA *rsa)
-{
-	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
-	TSS_CONTEXT *tssContext;
-
-	if (!app_data)
-		return 1;
-
-	tssContext = app_data->tssContext;
-
-	tpm2_flush_handle(tssContext, app_data->key);
-	if (app_data->parent == 0)
-		tpm2_flush_srk(tssContext);
-
-	OPENSSL_free(app_data);
-
-	TSS_Delete(tssContext);
-
 	return 1;
 }
 
@@ -134,6 +80,71 @@ static int tpm2_rsa_pub_dec(int flen,
 	}
 
 	return rv;
+}
+
+static int tpm2_rsa_pub_enc(int flen,
+			   const unsigned char *from,
+			   unsigned char *to,
+			   RSA *rsa,
+			   int padding)
+{
+	int rv;
+
+	rv = RSA_PKCS1_SSLeay()->rsa_pub_enc(flen, from, to, rsa,
+					     padding);
+	if (rv < 0)
+		fprintf(stderr, "rsa_pub_enc failed\n");
+
+	return rv;
+}
+
+#endif
+
+static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, char **auth)
+{
+	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
+
+	if (!app_data)
+		return 0;
+
+	*auth = app_data->auth;
+	*tssContext = app_data->tssContext;
+
+	return app_data->key;
+}
+
+void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
+{
+	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
+
+	rsa->meth = tpm2_rsa;
+	/* call our local init function here */
+	rsa->meth->init(rsa);
+
+	RSA_set_ex_data(rsa, ex_app_data, data);
+
+	/* release the reference EVP_PKEY_get1_RSA obtained */
+	RSA_free(rsa);
+}
+
+static void tpm2_rsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
+			  int idx, long argl, void *argp)
+{
+	struct app_data *app_data = ptr;
+	TSS_CONTEXT *tssContext;
+
+	if (!app_data)
+		return;
+
+	tssContext = app_data->tssContext;
+
+	tpm2_flush_handle(tssContext, app_data->key);
+	if (app_data->parent == 0)
+		tpm2_flush_srk(tssContext);
+
+	OPENSSL_free(app_data);
+
+	TSS_Delete(tssContext);
 }
 
 static int tpm2_rsa_priv_dec(int flen,
@@ -191,22 +202,6 @@ static int tpm2_rsa_priv_dec(int flen,
 	       out.message.t.size);
 
 	rv = out.message.t.size;
-
-	return rv;
-}
-
-static int tpm2_rsa_pub_enc(int flen,
-			   const unsigned char *from,
-			   unsigned char *to,
-			   RSA *rsa,
-			   int padding)
-{
-	int rv;
-
-	rv = RSA_PKCS1_SSLeay()->rsa_pub_enc(flen, from, to, rsa,
-					     padding);
-	if (rv < 0)
-		fprintf(stderr, "rsa_pub_enc failed\n");
 
 	return rv;
 }
@@ -280,5 +275,8 @@ static int tpm2_rsa_priv_enc(int flen,
 
 int tpm2_setup_rsa_methods(void)
 {
+	tpm2_rsa = &tpm2_rsa_meths;
+	ex_app_data = RSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_rsa_free);
+
 	return 1;
 }
