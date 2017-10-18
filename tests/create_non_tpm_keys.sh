@@ -15,6 +15,6 @@ bindir=${srcdir}/..
 for alg in "EC -pkeyopt ec_paramgen_curve:prime256v1" "RSA -pkeyopt rsa_keygen_bits:2048"; do
     openssl genpkey -algorithm ${alg} > key.priv && \
     openssl req -new -x509 -subj '/CN=test/' -key key.priv -engine tpm2 -out tmp.crt && \
-    openssl verify -engine tpm2 -check_ss_sig tmp.crt || \
+    openssl verify -CAfile tmp.crt -engine tpm2 -check_ss_sig tmp.crt || \
     exit 1
 done

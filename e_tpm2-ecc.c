@@ -24,15 +24,22 @@
 #include "tpm2-common.h"
 #include "e_tpm2.h"
 
-static const char *ecc_method_names = "tpm2 ecc";
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 static ECDSA_METHOD *tpm2_ecdsa;
+#else
+static EC_KEY_METHOD *tpm2_eck;
+#endif
 
 /* varibles used to get/set CRYPTO_EX_DATA values */
 static int ec_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
 
 static TPM_HANDLE tpm2_load_key_from_ecc(EC_KEY *eck, TSS_CONTEXT **tssContext, char **auth)
 {
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 	struct app_data *app_data = ECDSA_get_ex_data(eck, ec_app_data);
+#else
+	struct app_data *app_data = EC_KEY_get_ex_data(eck, ec_app_data);
+#endif
 
 	if (!app_data)
 		return 0;
@@ -47,16 +54,24 @@ void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)
 {
 	EC_KEY *eck = EVP_PKEY_get1_EC_KEY(pkey);
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 	if (!ECDSA_set_ex_data(eck, ec_app_data, data))
+#else
+	if (!EC_KEY_set_ex_data(eck, ec_app_data, data))
+#endif
 		fprintf(stderr, "Failed to bind key to engine (ecc ex_data)\n");
 	else
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 		ECDSA_set_method(eck, tpm2_ecdsa);
+#else
+		EC_KEY_set_method(eck, tpm2_eck);
+#endif
 
 	EC_KEY_free(eck);
 }
 
-static void tpm2_ecdsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
-			   int idx, long argl, void *argp)
+static void tpm2_ecc_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
+			  int idx, long argl, void *argp)
 {
 	struct app_data *data = ptr;
 
@@ -83,6 +98,7 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	char *auth;
 	TPM_HANDLE authHandle;
 	ECDSA_SIG *sig;
+	BIGNUM *r, *s;
 
 	/* The TPM insists on knowing the digest type, so
 	 * calculate that from the size */
@@ -139,27 +155,49 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	if (!sig)
 		return NULL;
 
-	sig->r = BN_bin2bn(out.signature.signature.ecdsa.signatureR.t.buffer,
-			   out.signature.signature.ecdsa.signatureR.t.size,
-			   NULL);
-	sig->s = BN_bin2bn(out.signature.signature.ecdsa.signatureS.t.buffer,
-			   out.signature.signature.ecdsa.signatureS.t.size,
-			   NULL);
+	r = BN_bin2bn(out.signature.signature.ecdsa.signatureR.t.buffer,
+		      out.signature.signature.ecdsa.signatureR.t.size,
+		      NULL);
+	s = BN_bin2bn(out.signature.signature.ecdsa.signatureS.t.buffer,
+		      out.signature.signature.ecdsa.signatureS.t.size,
+		      NULL);
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+	sig->r = r;
+	sig->s = s;
+#else
+	ECDSA_SIG_set0(sig, r, s);
+#endif
 	return sig;
 }
 
 int tpm2_setup_ecc_methods(void)
 {
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 	tpm2_ecdsa = ECDSA_METHOD_new(NULL);
 
 	if (!tpm2_ecdsa)
 		return 0;
 
-	ECDSA_METHOD_set_name(tpm2_ecdsa, (char *)ecc_method_names);
+	ECDSA_METHOD_set_name(tpm2_ecdsa, "tpm2 ecc");
 	ECDSA_METHOD_set_sign(tpm2_ecdsa, tpm2_ecdsa_sign);
 
-	ec_app_data =  ECDSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_ecdsa_free);
+	ec_app_data =  ECDSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_ecc_free);
+#else
+	int (*psign)(int type, const unsigned char *dgst,
+		     int dlen, unsigned char *sig,
+		     unsigned int *siglen,
+		     const BIGNUM *kinv, const BIGNUM *r,
+		     EC_KEY *eckey);
+
+	tpm2_eck = EC_KEY_METHOD_new(EC_KEY_OpenSSL());
+
+	EC_KEY_METHOD_get_sign(tpm2_eck, &psign, NULL, NULL);
+	EC_KEY_METHOD_set_sign(tpm2_eck, psign, NULL, tpm2_ecdsa_sign);
+
+	ec_app_data = EC_KEY_get_ex_new_index(0, NULL, NULL, NULL, tpm2_ecc_free);
+#endif
+
 
 	return 1;
 }

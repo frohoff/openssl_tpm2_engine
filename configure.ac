@@ -59,7 +59,7 @@ AC_LANG_CONFTEST(
 		  #endif
 		  ]])])
 gcc $CFLAGS conftest.c -lcrypto
-enginesdir=`./a.out`
+enginesdir=`./a.out|sed 's/ENGINESDIR: //'`
 if test -z "$enginesdir" ; then
     AC_MSG_FAILURE([Failed to find SSL engines directory])
 fi

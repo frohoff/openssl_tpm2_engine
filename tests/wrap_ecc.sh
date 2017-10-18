@@ -17,6 +17,6 @@ for curve in $(${bindir}/create_tpm2_key --list-curves); do
     openssl genpkey -paramfile tmp.param -out key.priv && \
     ${bindir}/create_tpm2_key -p 81000001 -w key.priv key.tpm && \
     openssl req -new -x509 -subj '/CN=test/' -key key.tpm -engine tpm2 -keyform engine -out tmp.crt && \
-    openssl verify -check_ss_sig tmp.crt || \
+    openssl verify -CAfile tmp.crt -check_ss_sig tmp.crt || \
     exit 1
 done

@@ -217,7 +217,7 @@ TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 {
 	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
-	BIGNUM *n, *e;
+	const BIGNUM *n, *e;
 	int size = RSA_size(rsa);
 	unsigned long exp;
 	TPM_RC rc = TPM_RC_KEY_SIZE;
@@ -229,7 +229,7 @@ TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 	n = rsa->n;
 	e = rsa->e;
 #else
-	RSA_get0_key(&n, &e, NULL);
+	RSA_get0_key(rsa, &n, &e, NULL);
 #endif
 	exp = BN_get_word(e);
 	/* TPM limitations means exponents must be under a word in size */
@@ -256,7 +256,7 @@ TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey)
 	TPMT_PUBLIC *tpub = &pub->publicArea;
 	pub->size = sizeof(*pub);
 
-	switch (EVP_PKEY_type(pkey->type)) {
+	switch (EVP_PKEY_type(EVP_PKEY_id(pkey))) {
 	case EVP_PKEY_RSA:
 		return openssl_to_tpm_public_rsa(tpub, pkey);
 	case EVP_PKEY_EC:
@@ -300,14 +300,14 @@ TPM_RC openssl_to_tpm_private_ecc(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
 
 TPM_RC openssl_to_tpm_private_rsa(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
 {
-	BIGNUM *q;
+	const BIGNUM *q;
 	TPM2B_PRIVATE_KEY_RSA *t2brsa = &s->sensitive.rsa;
 	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	q = rsa->q;
 #else
-	BIGNUM *p;
+	const BIGNUM *p;
 
 	RSA_get0_factors(rsa, &p, &q);
 #endif
@@ -324,7 +324,7 @@ TPM_RC openssl_to_tpm_private_rsa(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
 
 TPM_RC openssl_to_tpm_private(TPMT_SENSITIVE *priv, EVP_PKEY *pkey)
 {
-	switch (EVP_PKEY_type(pkey->type)) {
+	switch (EVP_PKEY_type(EVP_PKEY_id(pkey))) {
 	case EVP_PKEY_RSA:
 		return openssl_to_tpm_private_rsa(priv, pkey);
 	case EVP_PKEY_EC:

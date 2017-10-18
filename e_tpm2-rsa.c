@@ -117,9 +117,13 @@ void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
 {
 	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
 
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 	rsa->meth = tpm2_rsa;
 	/* call our local init function here */
 	rsa->meth->init(rsa);
+#else
+	RSA_set_method(rsa, tpm2_rsa);
+#endif
 
 	RSA_set_ex_data(rsa, ex_app_data, data);
 
@@ -275,7 +279,15 @@ static int tpm2_rsa_priv_enc(int flen,
 
 int tpm2_setup_rsa_methods(void)
 {
+#if OPENSSL_VERSION_NUMBER < 0x10100000
 	tpm2_rsa = &tpm2_rsa_meths;
+#else
+	tpm2_rsa = RSA_meth_dup(RSA_PKCS1_OpenSSL());
+	RSA_meth_set1_name(tpm2_rsa, "tpm2 rsa");
+	RSA_meth_set_priv_enc(tpm2_rsa, tpm2_rsa_priv_enc);
+	RSA_meth_set_priv_dec(tpm2_rsa, tpm2_rsa_priv_dec);
+#endif
+
 	ex_app_data = RSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_rsa_free);
 
 	return 1;
