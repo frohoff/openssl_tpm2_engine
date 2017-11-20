@@ -66,6 +66,13 @@ fi
 
 AC_SUBST(enginesdir)
 
+PKG_PROG_PKG_CONFIG
+PKG_CHECK_MODULES([DEPS], [libcrypto])
+
+AC_SEARCH_LIBS([TSS_Create], [tss], [], [
+	AC_MSG_ERROR([Unable to find libtss])
+])
+
 AC_DISABLE_STATIC
 AC_PROG_CC_STDC
 AM_PROG_CC_C_O
