@@ -399,15 +399,15 @@ static int tpm2_bind_fn(ENGINE * e, const char *id)
 
 void tpm2_delete(struct app_data *app_data)
 {
-	int ret = rmdir(app_data->dir);
-
-	if (ret < 0)
-		perror("Unlinking TPM_DATA_DIR");
-
 	tpm2_flush_srk(app_data->tssContext, app_data->parent);
 
 	if (app_data->tssContext)
 		TSS_Delete(app_data->tssContext);
+
+	if (rmdir(app_data->dir) < 0)
+		perror("Unlinking TPM_DATA_DIR");
+
+
 	if (app_data->dir)
 		OPENSSL_free((void *)app_data->dir);
 
