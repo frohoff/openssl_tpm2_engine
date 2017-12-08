@@ -79,12 +79,8 @@ static void tpm2_ecc_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 		return;
 
 	tpm2_flush_handle(data->tssContext, data->key);
-	if (data->parent == 0)
-		tpm2_flush_srk(data->tssContext);
 
-	TSS_Delete(data->tssContext);
-
-	OPENSSL_free(data);
+	tpm2_delete(data);
 }
 
 static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,

@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <openssl/crypto.h>
 #include <openssl/engine.h>
@@ -166,6 +167,33 @@ void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
 	}
 }
 
+static const char *tpm2_set_unique_tssdir(TSS_CONTEXT *tssContext)
+{
+	char *prefix = getenv("XDG_RUNTIME_DIR"), *template,
+		*dir;
+	int len = 0;
+	TPM_RC rc;
+
+	if (!prefix)
+		prefix = "/tmp";
+
+	len = snprintf(NULL, 0, "%s/tss2.XXXXXX", prefix);
+	if (len <= 0)
+		return NULL;
+	template = OPENSSL_malloc(len + 1);
+	if (!template)
+		return NULL;
+
+	len++;
+	len = snprintf(template, len, "%s/tss2.XXXXXX", prefix);
+
+	dir = mkdtemp(template);
+	rc = TSS_SetProperty(tssContext, TPM_DATA_DIR, dir);
+	if (rc)
+		tpm2_error(rc, "TSS_SetProperty TPM_DATA_DIR");
+	return dir;
+}
+
 static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     const char *key_id,  BIO *bio,
 				     struct tpm_ui *ui, void *cb_data)
@@ -243,17 +271,17 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		tpm2_error(rc, "TSS_Create");
 		goto err_free;
 	}
+	app_data->dir = tpm2_set_unique_tssdir(tssContext);
 	app_data->tssContext = tssContext;
 
 	app_data->parent = 0;
 	if (tssl->parent)
 		app_data->parent = ASN1_INTEGER_get(tssl->parent);
 
-	if (app_data->parent)
-		in.parentHandle = app_data->parent;
-	else
-		tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL);
+	if (app_data->parent == 0)
+		tpm2_load_srk(tssContext, &app_data->parent, srk_auth, NULL);
 
+	in.parentHandle = app_data->parent;
 	empty_auth = tssl->emptyAuth;
 
 	buffer = tssl->privkey->data;
@@ -267,7 +295,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	pkey = tpm2_to_openssl_public(&in.inPublic.publicArea);
 	if (!pkey) {
 		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
-		goto err_free_del;
+		goto err_free;
 	}
 
 	rc = TSS_Execute(tssContext,
@@ -305,11 +333,8 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	tpm2_flush_handle(tssContext, app_data->key);
  err_free_key:
 	EVP_PKEY_free(pkey);
- err_free_del:
-	TSS_Delete(tssContext);
  err_free:
-	OPENSSL_free(app_data);
-	tpm2_flush_srk(tssContext);
+	tpm2_delete(app_data);
  err:
 	TSSLOADABLE_free(tssl);
 
@@ -370,6 +395,23 @@ static int tpm2_bind_fn(ENGINE * e, const char *id)
 		return 0;
 	}
 	return 1;
+}
+
+void tpm2_delete(struct app_data *app_data)
+{
+	int ret = rmdir(app_data->dir);
+
+	if (ret < 0)
+		perror("Unlinking TPM_DATA_DIR");
+
+	tpm2_flush_srk(app_data->tssContext, app_data->parent);
+
+	if (app_data->tssContext)
+		TSS_Delete(app_data->tssContext);
+	if (app_data->dir)
+		OPENSSL_free((void *)app_data->dir);
+
+	OPENSSL_free(app_data);
 }
 
 IMPLEMENT_DYNAMIC_CHECK_FN()

@@ -143,12 +143,8 @@ static void tpm2_rsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 	tssContext = app_data->tssContext;
 
 	tpm2_flush_handle(tssContext, app_data->key);
-	if (app_data->parent == 0)
-		tpm2_flush_srk(tssContext);
 
-	OPENSSL_free(app_data);
-
-	TSS_Delete(tssContext);
+	tpm2_delete(app_data);
 }
 
 static int tpm2_rsa_priv_dec(int flen,

@@ -227,17 +227,12 @@ void tpm2_error(TPM_RC rc, const char *reason)
 }
 
 
-static TPM_HANDLE hSRK = 0;
-
 TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub)
 {
 	static TPM2B_PUBLIC srk_pub;
 	TPM_RC rc;
 	CreatePrimary_In in;
 	CreatePrimary_Out out;
-
-	if (hSRK)
-		goto out;
 
 	/* SPS owner */
 	in.primaryHandle = TPM_RH_OWNER;
@@ -282,21 +277,19 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 		return rc;
 	}
 
-	hSRK = out.objectHandle;
 	srk_pub = out.outPublic;
- out:
-	*h = hSRK;
+	*h = out.objectHandle;
 	if (pub)
 		*pub = srk_pub;
 
 	return 0;
 }
 
-void tpm2_flush_srk(TSS_CONTEXT *tssContext)
+void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK)
 {
-	if (hSRK)
+	/* only flush if it's a volatile key which we must have created */
+	if ((hSRK & 0xFF000000) == 0x80000000)
 		tpm2_flush_handle(tssContext, hSRK);
-	hSRK = 0;
 }
 
 void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h)

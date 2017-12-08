@@ -13,6 +13,9 @@ struct app_data
 	TPM_HANDLE parent;
 	TPM_HANDLE key;
 	char *auth;
+	const char *dir;
 };
+
+void tpm2_delete(struct app_data *app_data);
 
 #endif

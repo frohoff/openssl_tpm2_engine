@@ -673,7 +673,7 @@ int main(int argc, char **argv)
 		pub = &cout.outPublic;
 		priv = &cout.outPrivate;
 	}
-	tpm2_flush_srk(tssContext);
+	tpm2_flush_srk(tssContext, parent);
 	buffer = pubkey;
 	pubkey_len = 0;
 	size = sizeof(pubkey);
@@ -687,7 +687,7 @@ int main(int argc, char **argv)
 	exit(0);
 
  out_flush:
-	tpm2_flush_srk(tssContext);
+	tpm2_flush_srk(tssContext, parent);
  out_delete:
 	TSS_Delete(tssContext);
  out_err:
