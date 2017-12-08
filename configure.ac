@@ -2,7 +2,7 @@
 # configure.in for the OpenSSL TPM engine project
 #
 
-AC_INIT(openssl-tpm2-engine, 0.11.0, <James.Bottomley@HansenPartnership.com>)
+AC_INIT(openssl-tpm2-engine, 0.11.1, <James.Bottomley@HansenPartnership.com>)
 AM_INIT_AUTOMAKE(1.6.3)
 
 AM_MISSING_PROG(HELP2MAN, help2man)
