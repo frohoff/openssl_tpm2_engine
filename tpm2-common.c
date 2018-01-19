@@ -507,8 +507,30 @@ TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	in.symmetric.algorithm = TPM_ALG_AES;
 	in.symmetric.keyBits.aes = 128;
 	in.symmetric.mode.aes = TPM_ALG_CFB;
-	if (salt_key)
+	if (salt_key) {
+		/* For the TSS to use a key as salt, it must have
+		 * access to the public part.  It does this by keeping
+		 * key files, but request the public part just to make
+		 * sure*/
+		ReadPublic_In rin;
+		ReadPublic_Out rout;
+
+		rin.objectHandle = salt_key;
+		rc = TSS_Execute (tssContext,
+				  (RESPONSE_PARAMETERS *)&rout,
+				  (COMMAND_PARAMETERS *)&rin,
+				  NULL,
+				  TPM_CC_ReadPublic,
+				  TPM_RH_NULL, NULL, 0);
+		if (rc) {
+			tpm2_error(rc, "TPM2_ReadPublic");
+			return rc;
+		}
+		/* don't care what rout returns, the purpose of the
+		 * operation was to get the public key parameters into
+		 * the tss so it can construct the salt */
 		in.tpmKey = salt_key;
+	}
 	rc = TSS_Execute(tssContext,
 			 (RESPONSE_PARAMETERS *)&out,
 			 (COMMAND_PARAMETERS *)&in,
