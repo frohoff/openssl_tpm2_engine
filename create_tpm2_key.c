@@ -237,6 +237,8 @@ TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 		goto err;
 	tpm2_public_template_rsa(pub);
 	pub->parameters.rsaDetail.keyBits = size*8;
+	/* zero means standard exponent.  Some TPM chips will
+	 * reject a non standard exponent */
 	if (exp == 0x10001)
 		pub->parameters.rsaDetail.exponent = 0;
 	else
