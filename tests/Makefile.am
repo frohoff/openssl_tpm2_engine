@@ -1,4 +1,5 @@
-TESTS = start_sw_tpm.sh \
+TESTS = fail_connect.sh \
+	start_sw_tpm.sh \
 	check_curves.sh \
 	create_tpm_key.sh \
 	check_auth.sh \
