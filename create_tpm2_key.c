@@ -149,6 +149,7 @@ void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve)
 	 * and decryption (see e_tpm2.c for details) */
 	pub->objectAttributes.val = TPMA_OBJECT_NODA |
 		TPMA_OBJECT_SIGN |
+		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_USERWITHAUTH;
 	pub->authPolicy.t.size = 0;
 	pub->parameters.eccDetail.symmetric.algorithm = TPM_ALG_NULL;
