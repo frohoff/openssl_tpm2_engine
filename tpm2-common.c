@@ -322,6 +322,7 @@ int tpm2_get_ecc_group(EC_KEY *eck, TPMI_ECC_CURVE curveID)
 
 	if (nid) {
 		g = EC_GROUP_new_by_curve_name(nid);
+		EC_GROUP_set_asn1_flag(g, OPENSSL_EC_NAMED_CURVE);
 		goto out;
 	}
 
