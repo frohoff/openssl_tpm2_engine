@@ -34,13 +34,29 @@ pg9RqI0tA1DtJPyRSVNWvK9488KBdXa9rgHncDl5krAnsoA+k3B7hZyk8vPsKg6I
 eHE/E4MuHfTbmc56LxxPf7g5rNrGG+Aamu+DRg==
 -----END TSS2 KEY BLOB-----
 " > tmp.tpm
+##
+# conversion to public key doesn't actually contact the TPM
+# so this should succeed
+##
 openssl rsa -engine tpm2 -inform engine -in tmp.tpm -pubout -out tmp.pub 2> tmp.txt
+if [ $? -ne 0 ]; then
+    echo "TPM key import failed with $?"
+    cat tmp.txt
+    exit 1
+fi
+##
+# key operation does contact the TPM and should fail
+##
+echo "This is a message" |\
+openssl rsautl -sign -engine tpm2 -keyform engine -inkey tmp.tpm -out tmp.msg 2> tmp.txt
 if [ $? -ne 1 ]; then
-    # error other than 1 usually means segfault
-    exit 1;
+    echo "TPM key signing failed with $?"
+    cat tmp.txt
+    exit 1
 fi
 cat tmp.txt
-grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
 grep -q 'TPM2_Load failed' tmp.txt || exit 1
+grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
+
 rm -f tmp.tpm tmp.txt
 

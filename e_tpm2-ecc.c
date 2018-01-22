@@ -76,9 +76,8 @@ static TPM_HANDLE tpm2_load_key_from_ecc(const EC_KEY *eck, TSS_CONTEXT **tssCon
 		return 0;
 
 	*auth = app_data->auth;
-	*tssContext = app_data->tssContext;
 
-	return app_data->key;
+	return tpm2_load_key(tssContext, app_data);
 }
 
 void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)
@@ -110,8 +109,6 @@ static void tpm2_ecc_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 
 	if (!data)
 		return;
-
-	tpm2_flush_handle(data->tssContext, data->key);
 
 	tpm2_delete(data);
 }
@@ -163,9 +160,11 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	in.validation.tag = TPM_ST_HASHCHECK;
 	in.validation.hierarchy = TPM_RH_NULL;
 	in.validation.digest.t.size = 0;
+
+	sig = NULL;
 	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
 	if (rc)
-		return NULL;
+		goto out;
 
 	rc = TSS_Execute(tssContext,
 			 (RESPONSE_PARAMETERS *)&out,
@@ -177,12 +176,12 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	if (rc) {
 		tpm2_error(rc, "TPM2_Sign");
 		tpm2_flush_handle(tssContext, authHandle);
-		return NULL;
+		goto out;
 	}
 
 	sig = ECDSA_SIG_new();
 	if (!sig)
-		return NULL;
+		goto out;
 
 	r = BN_bin2bn(out.signature.signature.ecdsa.signatureR.t.buffer,
 		      out.signature.signature.ecdsa.signatureR.t.size,
@@ -197,6 +196,8 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 #else
 	ECDSA_SIG_set0(sig, r, s);
 #endif
+ out:
+	tpm2_unload_key(tssContext, in.keyHandle);
 	return sig;
 }
 
@@ -213,6 +214,7 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	const EC_GROUP *group;
 	BN_CTX *ctx;
 	unsigned char point[MAX_ECC_KEY_BYTES*2 + 1];
+	int ret;
 
 	group = EC_KEY_get0_group(eck);
 	ctx = BN_CTX_new();
@@ -236,9 +238,10 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	memcpy(in.inPoint.point.y.t.buffer, point + 1 + len, len);
 	in.inPoint.point.y.t.size = len;
 
+	ret = 0;
 	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
 	if (rc)
-		return 0;
+		goto out;
 
 	rc = TSS_Execute(tssContext,
 			 (RESPONSE_PARAMETERS *)&out,
@@ -250,12 +253,12 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	if (rc) {
 		tpm2_error(rc, "TPM2_ECDH_ZGen");
 		tpm2_flush_handle(tssContext, authHandle);
-		return 0;
+		goto out;
 	}
 
 	*psec = OPENSSL_malloc(len);
 	if (!*psec)
-		return 0;
+		goto out;
 	*pseclen = len;
 	memset(*psec, 0, len);
 
@@ -263,7 +266,10 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	memcpy(*psec + len - out.outPoint.point.x.t.size,
 	       out.outPoint.point.x.t.buffer,
 	       out.outPoint.point.x.t.size);
-	return 1;
+	ret = 1;
+ out:
+	tpm2_unload_key(tssContext, in.keyHandle);
+	return ret;
 }
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000

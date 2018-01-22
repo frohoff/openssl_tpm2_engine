@@ -108,9 +108,7 @@ static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, cha
 		return 0;
 
 	*auth = app_data->auth;
-	*tssContext = app_data->tssContext;
-
-	return app_data->key;
+	return tpm2_load_key(tssContext, app_data);
 }
 
 void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
@@ -135,14 +133,9 @@ static void tpm2_rsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 			  int idx, long argl, void *argp)
 {
 	struct app_data *app_data = ptr;
-	TSS_CONTEXT *tssContext;
 
 	if (!app_data)
 		return;
-
-	tssContext = app_data->tssContext;
-
-	tpm2_flush_handle(tssContext, app_data->key);
 
 	tpm2_delete(app_data);
 }
@@ -172,7 +165,7 @@ static int tpm2_rsa_priv_dec(int flen,
 	rv = -1;
 	if (padding != RSA_PKCS1_PADDING) {
 		fprintf(stderr, "Non PKCS1 padding asked for\n");
-		return rv;
+		goto out;
 	}
 
 	in.inScheme.scheme = TPM_ALG_RSAES;
@@ -182,7 +175,7 @@ static int tpm2_rsa_priv_dec(int flen,
 
 	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
 	if (rc)
-		return rv;
+		goto out;
 
 	rc = TSS_Execute(tssContext,
 			 (RESPONSE_PARAMETERS *)&out,
@@ -195,14 +188,15 @@ static int tpm2_rsa_priv_dec(int flen,
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
 		/* failure means auth handle is not flushed */
 		tpm2_flush_handle(tssContext, authHandle);
-		return rv;
+		goto out;
 	}
  
 	memcpy(to, out.message.t.buffer,
 	       out.message.t.size);
 
 	rv = out.message.t.size;
-
+ out:
+	tpm2_unload_key(tssContext, in.keyHandle);
 	return rv;
 }
 
@@ -220,6 +214,11 @@ static int tpm2_rsa_priv_enc(int flen,
 	char *auth;
 	TPM_HANDLE authHandle;
 
+	if (padding != RSA_PKCS1_PADDING) {
+		fprintf(stderr, "Non PKCS1 padding asked for\n");
+		return -1;
+	}
+
 	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
 
 	if (in.keyHandle == 0) {
@@ -229,14 +228,9 @@ static int tpm2_rsa_priv_enc(int flen,
 	}
 
 	rv = -1;
-	if (padding != RSA_PKCS1_PADDING) {
-		fprintf(stderr, "Non PKCS1 padding asked for\n");
-		return rv;
-	}
-
 	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
 	if (rc)
-		return rv;
+		goto out;
 
 	/* this is slightly paradoxical that we're doing a Decrypt
 	 * operation: the only material difference between decrypt and
@@ -262,13 +256,16 @@ static int tpm2_rsa_priv_enc(int flen,
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
 		/* failure means auth handle is not flushed */
 		tpm2_flush_handle(tssContext, authHandle);
-		return rv;
+		goto out;
 	}
 
 	memcpy(to, out.message.t.buffer,
 	       out.message.t.size);
 
 	rv = out.message.t.size;
+
+ out:
+	tpm2_unload_key(tssContext, in.keyHandle);
 
 	return rv;
 }

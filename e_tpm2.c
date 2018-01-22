@@ -167,12 +167,11 @@ void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
 	}
 }
 
-static const char *tpm2_set_unique_tssdir(TSS_CONTEXT *tssContext)
+static const char *tpm2_set_unique_tssdir(void)
 {
 	char *prefix = getenv("XDG_RUNTIME_DIR"), *template,
 		*dir;
 	int len = 0;
-	TPM_RC rc;
 
 	if (!prefix)
 		prefix = "/tmp";
@@ -188,9 +187,6 @@ static const char *tpm2_set_unique_tssdir(TSS_CONTEXT *tssContext)
 	len = snprintf(template, len, "%s/tss2.XXXXXX", prefix);
 
 	dir = mkdtemp(template);
-	rc = TSS_SetProperty(tssContext, TPM_DATA_DIR, dir);
-	if (rc)
-		tpm2_error(rc, "TSS_SetProperty TPM_DATA_DIR");
 	return dir;
 }
 
@@ -198,11 +194,8 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     const char *key_id,  BIO *bio,
 				     struct tpm_ui *ui, void *cb_data)
 {
-	Load_In in;
-	Load_Out out;
-	TSS_CONTEXT *tssContext;
-	TPM_RC rc;
 	EVP_PKEY *pkey;
+	TPM2B_PUBLIC p;
 	BIO *bf;
 	TSSLOADABLE *tssl;
 	BYTE *buffer;
@@ -259,67 +252,46 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		goto err;
 	}
 
-	app_data = OPENSSL_malloc(sizeof(struct app_data));
+	app_data = OPENSSL_malloc(sizeof(*app_data));
 
 	if (!app_data) {
 		fprintf(stderr, "Failed to allocate app_data\n");
 		goto err;
 	}
+	memset(app_data, 0, sizeof(*app_data));
 
-	rc = TSS_Create(&tssContext);
-	if (rc) {
-		tpm2_error(rc, "TSS_Create");
-		goto err_free;
-	}
-	app_data->dir = tpm2_set_unique_tssdir(tssContext);
-	app_data->tssContext = tssContext;
+	app_data->dir = tpm2_set_unique_tssdir();
 
-	app_data->parent = 0;
 	if (tssl->parent)
 		app_data->parent = ASN1_INTEGER_get(tssl->parent);
 
-	if (app_data->parent == 0)
-		tpm2_load_srk(tssContext, &app_data->parent, srk_auth, NULL);
-
-	in.parentHandle = app_data->parent;
 	empty_auth = tssl->emptyAuth;
 
-	buffer = tssl->privkey->data;
-	size = tssl->privkey->length;
-	TPM2B_PRIVATE_Unmarshal(&in.inPrivate, &buffer, &size);
-	buffer = tssl->pubkey->data;
-	size = tssl->pubkey->length;
-	TPM2B_PUBLIC_Unmarshal(&in.inPublic, &buffer, &size, FALSE);
+	app_data->priv = OPENSSL_malloc(tssl->privkey->length);
+	if (!app_data->priv)
+		goto err_free;
+	app_data->priv_len = tssl->privkey->length;
+	memcpy(app_data->priv, tssl->privkey->data, app_data->priv_len);
 
+	app_data->pub = OPENSSL_malloc(tssl->pubkey->length);
+	if (!app_data->pub)
+		goto err_free;
+	app_data->pub_len = tssl->pubkey->length;
+	memcpy(app_data->pub, tssl->pubkey->data, app_data->pub_len);
+	buffer = app_data->pub;
+	size = app_data->pub_len;
+	TPM2B_PUBLIC_Unmarshal(&p, &buffer, &size, FALSE);
 	/* create the new objects to return */
-	pkey = tpm2_to_openssl_public(&in.inPublic.publicArea);
+	pkey = tpm2_to_openssl_public(&p.publicArea);
 	if (!pkey) {
 		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
 		goto err_free;
 	}
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_Load,
-			 TPM_RS_PW, NULL, 0,
-			 TPM_RH_NULL, NULL, 0,
-			 TPM_RH_NULL, NULL, 0,
-			 TPM_RH_NULL, NULL, 0);
-
-	if (rc) {
-		tpm2_error(rc, "TPM2_Load");
-		goto err_free_key;
-	}
-
-	app_data->key = out.objectHandle;
-
-	app_data->auth = NULL;
 	if (empty_auth == 0) {
 		app_data->auth = tpm2_get_auth(ui, "TPM Key Password: ", cb_data);
 		if (!app_data->auth)
-			goto err_unload;
+			goto err_free_key;
 	}
 
 	TSSLOADABLE_free(tssl);
@@ -329,8 +301,6 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	*ppkey = pkey;
 	return 1;
 
- err_unload:
-	tpm2_flush_handle(tssContext, app_data->key);
  err_free_key:
 	EVP_PKEY_free(pkey);
  err_free:
@@ -397,19 +367,75 @@ static int tpm2_bind_fn(ENGINE * e, const char *id)
 	return 1;
 }
 
+TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
+{
+	TSS_CONTEXT *tssContext;
+	Load_In in;
+	Load_Out out;
+	TPM_HANDLE key = 0;
+	TPM_RC rc;
+	BYTE *buffer;
+	INT32 size;
+
+	rc = TSS_Create(&tssContext);
+	if (rc) {
+		tpm2_error(rc, "TSS_Create");
+		return 0;
+	}
+
+	buffer = app_data->priv;
+	size = app_data->priv_len;
+	TPM2B_PRIVATE_Unmarshal(&in.inPrivate, &buffer, &size);
+
+	buffer = app_data->pub;
+	size = app_data->pub_len;
+	TPM2B_PUBLIC_Unmarshal(&in.inPublic, &buffer, &size, FALSE);
+
+	if (app_data->parent) {
+		in.parentHandle = app_data->parent;
+	} else {
+		rc = tpm2_load_srk(tssContext, &in.parentHandle, NULL, NULL);
+		if (rc)
+			goto out;
+	}
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_Load,
+			 TPM_RS_PW, NULL, 0,
+			 TPM_RH_NULL, NULL, 0);
+	if (rc)
+		tpm2_error(rc, "TPM2_Load");
+	else
+		key = out.objectHandle;
+
+	if (!app_data->parent)
+		tpm2_flush_srk(tssContext, in.parentHandle);
+ out:
+	if (!key)
+		TSS_Delete(tssContext);
+	else
+		*tsscp = tssContext;
+	return key;
+}
+
+void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key)
+{
+	tpm2_flush_handle(tssContext, key);
+
+	TSS_Delete(tssContext);
+}
+
 void tpm2_delete(struct app_data *app_data)
 {
-	tpm2_flush_srk(app_data->tssContext, app_data->parent);
-
-	if (app_data->tssContext)
-		TSS_Delete(app_data->tssContext);
+	OPENSSL_free(app_data->priv);
+	OPENSSL_free(app_data->pub);
 
 	if (rmdir(app_data->dir) < 0)
 		perror("Unlinking TPM_DATA_DIR");
 
-
-	if (app_data->dir)
-		OPENSSL_free((void *)app_data->dir);
+	OPENSSL_free((void *)app_data->dir);
 
 	OPENSSL_free(app_data);
 }

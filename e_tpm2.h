@@ -7,15 +7,18 @@
 #define TPM2_ENGINE_EX_DATA_UNINIT		-1
 
 /* structure pointed to by the RSA object's app_data pointer */
-struct app_data
-{
-	TSS_CONTEXT *tssContext;
+struct app_data {
 	TPM_HANDLE parent;
-	TPM_HANDLE key;
+	void *priv;
+	int priv_len;
+	void *pub;
+	int pub_len;
 	char *auth;
 	const char *dir;
 };
 
+TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data);
+void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key);
 void tpm2_delete(struct app_data *app_data);
 
 #endif
