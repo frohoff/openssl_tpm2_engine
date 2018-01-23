@@ -10,6 +10,7 @@ TESTS = fail_connect.sh \
 	wrap_generic_ecc.sh \
 	derive_ecc.sh \
 	create_non_tpm_keys.sh \
+	da_check.sh \
 	stop_sw_tpm.sh
 
 AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
