@@ -37,6 +37,7 @@ static struct option long_options[] = {
 	{"rsa", 0, 0, 'r'},
 	{"ecc", 1, 0, 'e'},
 	{"list-curves", 0, 0, 'l'},
+	{"da", 0, 0, 'd'},
 	{0, 0, 0, 0}
 };
 
@@ -49,6 +50,9 @@ usage(char *argv0)
 	fprintf(stdout, "Usage: %s [options] <filename>\n\n"
 		"Options:\n"
 		"\t-a, --auth                    require a password for the key [NO]\n"
+		"\t-d, --da                      mark the key as having Dictionary Attack implications.  This means that if\n"
+		"\t                              the key password is incorrectly presented too many times, the TPM may\n"
+		"\t                              Implement DA mitigation and refuse connections for a while\n"
 		"\t-h, --help                    print this help message\n"
 		"\t-s, --key-size <size>         key size in bits [2048]\n"
 		"\t-n, --name-scheme <scheme>    name algorithm to use sha1 [sha256] sha384 sha512\n"
@@ -132,7 +136,7 @@ void tpm2_public_template_rsa(TPMT_PUBLIC *pub)
 	/* note: all our keys are decrypt only.  This is because
 	 * we use the TPM2_RSA_Decrypt operation for both signing
 	 * and decryption (see e_tpm2.c for details) */
-	pub->objectAttributes.val = TPMA_OBJECT_NODA |
+	pub->objectAttributes.val =
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_USERWITHAUTH;
 	pub->authPolicy.t.size = 0;
@@ -147,7 +151,7 @@ void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve)
 	/* note: all our keys are decrypt only.  This is because
 	 * we use the TPM2_RSA_Decrypt operation for both signing
 	 * and decryption (see e_tpm2.c for details) */
-	pub->objectAttributes.val = TPMA_OBJECT_NODA |
+	pub->objectAttributes.val =
 		TPMA_OBJECT_SIGN |
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_USERWITHAUTH;
@@ -425,11 +429,11 @@ int main(int argc, char **argv)
 	char *key = NULL;
 	TPMI_ECC_CURVE ecc = TPM_ECC_NONE;
 	int rsa = -1;
-
+	uint32_t noda = TPMA_OBJECT_NODA;
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ap:hw:vk:re:l",
+		c = getopt_long(argc, argv, "n:s:ap:hw:vk:re:ld",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -495,6 +499,9 @@ int main(int argc, char **argv)
 			case 'l':
 				list_curves();
 				exit(0);
+			case 'd':
+				noda = 0;
+				break;
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
@@ -595,6 +602,8 @@ int main(int argc, char **argv)
 			reason = "openssl_to_tpm_public";
 			goto out_flush;
 		}
+		/* set the NODA flag */
+		iin.objectPublic.publicArea.objectAttributes.val |= noda;
 		rc = tpm2_ObjectPublic_GetName(&name,
 					       &iin.objectPublic.publicArea);
 		if (rc) {
@@ -647,6 +656,7 @@ int main(int argc, char **argv)
 		}
 
 		cin.inPublic.publicArea.objectAttributes.val |=
+			noda |
 			TPMA_OBJECT_SENSITIVEDATAORIGIN;
 		if (auth) {
 			int len = strlen(auth);
