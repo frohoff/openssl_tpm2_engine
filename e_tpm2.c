@@ -382,6 +382,11 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 		tpm2_error(rc, "TSS_Create");
 		return 0;
 	}
+	rc = TSS_SetProperty(tssContext, TPM_DATA_DIR, app_data->dir);
+	if (rc) {
+		tpm2_error(rc, "TSS_SetProperty");
+		return 0;
+	}
 
 	buffer = app_data->priv;
 	size = app_data->priv_len;
