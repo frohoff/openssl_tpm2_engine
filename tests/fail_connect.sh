@@ -14,7 +14,7 @@ if [ $? -ne 1 ]; then
     exit 1
 fi
 cat tmp.txt
-grep -q 'TPM2_Create failed' tmp.txt || exit 1
+grep -q 'TPM2_ReadPublic failed' tmp.txt || exit 1
 grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
 ##
 # This is a real TPM key so the ASN.1 parses correctly

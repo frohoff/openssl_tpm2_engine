@@ -430,6 +430,7 @@ int main(int argc, char **argv)
 	TPMI_ECC_CURVE ecc = TPM_ECC_NONE;
 	int rsa = -1;
 	uint32_t noda = TPMA_OBJECT_NODA;
+	TPM_HANDLE authHandle;
 
 	while (1) {
 		option_index = 0;
@@ -566,7 +567,6 @@ int main(int argc, char **argv)
 		Import_In iin;
 		Import_Out iout;
 		EVP_PKEY *pkey;
-		TPM_HANDLE authHandle;
 		TPMT_SENSITIVE s;
 		TPM2B_NAME name;
 
@@ -671,15 +671,22 @@ int main(int argc, char **argv)
 		cin.outsideInfo.t.size = 0;
 		cin.creationPCR.count = 0;
 
+		/* use salted parameter encryption to hide the key */
+		rc = tpm2_get_hmac_handle(tssContext, &authHandle, parent);
+		if (rc)
+			goto out_flush;
+
 		rc = TSS_Execute(tssContext,
 				 (RESPONSE_PARAMETERS *)&cout,
 				 (COMMAND_PARAMETERS *)&cin,
 				 NULL,
 				 TPM_CC_Create,
-				 TPM_RS_PW, NULL, 0,
+				 authHandle, NULL, TPMA_SESSION_DECRYPT,
 				 TPM_RH_NULL, NULL, 0);
 		if (rc) {
 			reason = "TPM2_Create";
+			/* failure means auth handle is not flushed */
+			tpm2_flush_handle(tssContext, authHandle);
 			goto out_flush;
 		}
 
