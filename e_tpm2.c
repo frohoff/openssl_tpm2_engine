@@ -167,29 +167,6 @@ void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
 	}
 }
 
-static const char *tpm2_set_unique_tssdir(void)
-{
-	char *prefix = getenv("XDG_RUNTIME_DIR"), *template,
-		*dir;
-	int len = 0;
-
-	if (!prefix)
-		prefix = "/tmp";
-
-	len = snprintf(NULL, 0, "%s/tss2.XXXXXX", prefix);
-	if (len <= 0)
-		return NULL;
-	template = OPENSSL_malloc(len + 1);
-	if (!template)
-		return NULL;
-
-	len++;
-	len = snprintf(template, len, "%s/tss2.XXXXXX", prefix);
-
-	dir = mkdtemp(template);
-	return dir;
-}
-
 static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     const char *key_id,  BIO *bio,
 				     struct tpm_ui *ui, void *cb_data)
@@ -377,16 +354,9 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	BYTE *buffer;
 	INT32 size;
 
-	rc = TSS_Create(&tssContext);
-	if (rc) {
-		tpm2_error(rc, "TSS_Create");
+	rc = tpm2_create(&tssContext, app_data->dir);
+	if (rc)
 		return 0;
-	}
-	rc = TSS_SetProperty(tssContext, TPM_DATA_DIR, app_data->dir);
-	if (rc) {
-		tpm2_error(rc, "TSS_SetProperty");
-		return 0;
-	}
 
 	buffer = app_data->priv;
 	size = app_data->priv_len;

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
@@ -431,6 +432,7 @@ int main(int argc, char **argv)
 	int rsa = -1;
 	uint32_t noda = TPMA_OBJECT_NODA;
 	TPM_HANDLE authHandle;
+	const char *dir;
 
 	while (1) {
 		option_index = 0;
@@ -549,7 +551,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	rc = TSS_Create(&tssContext);
+	dir = tpm2_set_unique_tssdir();
+	rc = tpm2_create(&tssContext, dir);
 	if (rc) {
 		reason = "TSS_Create";
 		goto out_err;
@@ -704,12 +707,15 @@ int main(int argc, char **argv)
 	TSS_TPM2B_PRIVATE_Marshal(priv, &privkey_len, &buffer, &size);
 	openssl_write_tpmfile(filename, pubkey, pubkey_len, privkey, privkey_len, auth == NULL, parent);
 	TSS_Delete(tssContext);
+	rmdir(dir);
+
 	exit(0);
 
  out_flush:
 	tpm2_flush_srk(tssContext, parent);
  out_delete:
 	TSS_Delete(tssContext);
+	rmdir(dir);
  out_err:
 	tpm2_error(rc, reason);
 

@@ -771,3 +771,44 @@ const char *tpm2_curve_name_to_text(TPMI_ECC_CURVE curve)
 
 	return NULL;
 }
+
+const char *tpm2_set_unique_tssdir(void)
+{
+	char *prefix = getenv("XDG_RUNTIME_DIR"), *template,
+		*dir;
+	int len = 0;
+
+	if (!prefix)
+		prefix = "/tmp";
+
+	len = snprintf(NULL, 0, "%s/tss2.XXXXXX", prefix);
+	if (len <= 0)
+		return NULL;
+	template = OPENSSL_malloc(len + 1);
+	if (!template)
+		return NULL;
+
+	len++;
+	len = snprintf(template, len, "%s/tss2.XXXXXX", prefix);
+
+	dir = mkdtemp(template);
+	return dir;
+}
+
+TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir)
+{
+	TPM_RC rc;
+
+	rc = TSS_Create(tsscp);
+	if (rc) {
+		tpm2_error(rc, "TSS_Create");
+		return rc;
+	}
+	rc = TSS_SetProperty(*tsscp, TPM_DATA_DIR, dir);
+	if (rc) {
+		tpm2_error(rc, "TSS_SetProperty");
+		return rc;
+	}
+
+	return TPM_RC_SUCCESS;
+}
