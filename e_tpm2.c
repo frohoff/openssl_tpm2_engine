@@ -369,7 +369,7 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	if (app_data->parent) {
 		in.parentHandle = app_data->parent;
 	} else {
-		rc = tpm2_load_srk(tssContext, &in.parentHandle, NULL, NULL);
+	  rc = tpm2_load_srk(tssContext, &in.parentHandle, NULL, NULL, TPM_RH_OWNER);
 		if (rc)
 			goto out;
 	}

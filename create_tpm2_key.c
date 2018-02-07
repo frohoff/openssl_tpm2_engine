@@ -559,7 +559,7 @@ int main(int argc, char **argv)
 	}
 
 	if (parent == 0) {
-		rc = tpm2_load_srk(tssContext, &parent, NULL, NULL);
+	  rc = tpm2_load_srk(tssContext, &parent, NULL, NULL, TPM_RH_OWNER);
 		if (rc) {
 			reason = "tpm2_load_srk";
 			goto out_delete;

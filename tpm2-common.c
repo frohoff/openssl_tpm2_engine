@@ -227,7 +227,7 @@ void tpm2_error(TPM_RC rc, const char *reason)
 }
 
 
-TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub)
+TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy)
 {
 	static TPM2B_PUBLIC srk_pub;
 	TPM_RC rc;
@@ -235,7 +235,7 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 	CreatePrimary_Out out;
 
 	/* SPS owner */
-	in.primaryHandle = TPM_RH_OWNER;
+	in.primaryHandle = hierarchy;
 	/* assume no owner password */
 	in.inSensitive.sensitive.userAuth.t.size = 0;
 	/* no sensitive date for storage keys */
