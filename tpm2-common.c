@@ -246,7 +246,7 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 	in.creationPCR.count = 0;
 
 	/* public parameters for an RSA2048 key  */
-	in.inPublic.publicArea.type = TPM_ALG_RSA;
+	in.inPublic.publicArea.type = TPM_ALG_ECC;
 	in.inPublic.publicArea.nameAlg = TPM_ALG_SHA256;
 	in.inPublic.publicArea.objectAttributes.val =
 		TPMA_OBJECT_NODA |
@@ -254,13 +254,13 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 		TPMA_OBJECT_USERWITHAUTH |
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_RESTRICTED;
-	in.inPublic.publicArea.parameters.rsaDetail.symmetric.algorithm = TPM_ALG_AES;
-	in.inPublic.publicArea.parameters.rsaDetail.symmetric.keyBits.aes = 128;
-	in.inPublic.publicArea.parameters.rsaDetail.symmetric.mode.aes = TPM_ALG_CFB;
-	in.inPublic.publicArea.parameters.rsaDetail.scheme.scheme = TPM_ALG_NULL;
-	in.inPublic.publicArea.parameters.rsaDetail.keyBits = 2048;
-	/* means conventional 2^16+1 */
-	in.inPublic.publicArea.parameters.rsaDetail.exponent = 0;
+	in.inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
+	in.inPublic.publicArea.parameters.eccDetail.symmetric.keyBits.aes = 128;
+	in.inPublic.publicArea.parameters.eccDetail.symmetric.mode.aes = TPM_ALG_CFB;
+	in.inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_NULL;
+	in.inPublic.publicArea.parameters.eccDetail.curveID = TPM_ECC_NIST_P256;
+	in.inPublic.publicArea.parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
+
 	in.inPublic.publicArea.unique.rsa.t.size = 0;
 	in.inPublic.publicArea.authPolicy.t.size = 0;
 
