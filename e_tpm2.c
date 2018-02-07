@@ -241,6 +241,9 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 
 	if (tssl->parent)
 		app_data->parent = ASN1_INTEGER_get(tssl->parent);
+	else
+		/* older keys have absent parent */
+		app_data->parent = TPM_RH_OWNER;
 
 	empty_auth = tssl->emptyAuth;
 
@@ -366,10 +369,10 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	size = app_data->pub_len;
 	TPM2B_PUBLIC_Unmarshal(&in.inPublic, &buffer, &size, FALSE);
 
-	if (app_data->parent) {
+	if ((app_data->parent & 0xff000000) == 0x81000000) {
 		in.parentHandle = app_data->parent;
 	} else {
-	  rc = tpm2_load_srk(tssContext, &in.parentHandle, NULL, NULL, TPM_RH_OWNER);
+		rc = tpm2_load_srk(tssContext, &in.parentHandle, NULL, NULL, app_data->parent);
 		if (rc)
 			goto out;
 	}
@@ -385,8 +388,7 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	else
 		key = out.objectHandle;
 
-	if (!app_data->parent)
-		tpm2_flush_srk(tssContext, in.parentHandle);
+	tpm2_flush_srk(tssContext, in.parentHandle);
  out:
 	if (!key)
 		TSS_Delete(tssContext);

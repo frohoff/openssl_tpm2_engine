@@ -57,7 +57,13 @@ usage(char *argv0)
 		"\t-h, --help                    print this help message\n"
 		"\t-s, --key-size <size>         key size in bits [2048]\n"
 		"\t-n, --name-scheme <scheme>    name algorithm to use sha1 [sha256] sha384 sha512\n"
-		"\t-p, --parent-handle <handle>  persistent handle of parent key\n"
+		"\t-p, --parent-handle <handle>  parent for the key, can either be a\n"
+		"\t                              persistent key or a hierarchy.\n"
+		"\t                              the hierarchies can be 'platform',\n"
+		"\t                              'owner', 'null' or 'endorsement'.\n"
+		"\t                              The seeds used for derivation are\n"
+		"\t                              platform, storage, null or endorsement\n"
+		"\t                              respectively\n"
 		"\t-v, --version                 print package version\n"
 		"\t-w, --wrap <file>             wrap an existing openssl PEM key\n"
 		"\t-k, --password <pwd>          use this password instead of prompting\n"
@@ -95,10 +101,9 @@ openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 	}
 	tssl.type = OBJ_txt2obj(OID_loadableKey, 1);
 	tssl.emptyAuth = empty_auth;
-	if ((parent & 0xff000000) == 0x81000000) {
-		tssl.parent = ASN1_INTEGER_new();
-		ASN1_INTEGER_set(tssl.parent, parent);
-	}
+	tssl.parent = ASN1_INTEGER_new();
+	ASN1_INTEGER_set(tssl.parent, parent);
+
 	tssl.pubkey = ASN1_OCTET_STRING_new();
 	ASN1_STRING_set(tssl.pubkey, pubkey, pubkey_len);
 	tssl.privkey = ASN1_OCTET_STRING_new();
@@ -414,13 +419,40 @@ static void list_curves(void)
 	exit(1);
 }
 
+static TPM_HANDLE get_parent(const char *pstr)
+{
+	TPM_HANDLE p;
+
+	if (strcmp(pstr, "owner") == 0)
+		p = TPM_RH_OWNER;
+	else if (strcmp(pstr, "platform") == 0)
+		p = TPM_RH_PLATFORM;
+	else if (strcmp(pstr, "endorsement") == 0)
+		p = TPM_RH_ENDORSEMENT;
+	else if (strcmp(pstr, "null") == 0)
+		p = TPM_RH_NULL;
+	else
+		p = strtoul(pstr, NULL, 16);
+
+	if (((p & 0xff000000) == 0x40000000) &&
+	    (p == TPM_RH_OWNER ||
+	     p == TPM_RH_PLATFORM ||
+	     p == TPM_RH_ENDORSEMENT ||
+	     p == TPM_RH_NULL))
+		return p;
+	else if ((p & 0xff000000) == 0x81000000)
+		return p;
+
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	char *filename, *wrap = NULL, *auth = NULL;
 	int option_index, c;
 	const char *reason = "";
 	TSS_CONTEXT *tssContext = NULL;
-	TPM_HANDLE parent = 0;
+	TPM_HANDLE parent = TPM_RH_OWNER, phandle;
 	TPM_RC rc = 0;
 	BYTE pubkey[sizeof(TPM2B_PUBLIC)],privkey[sizeof(TPM2B_PRIVATE)], *buffer;
 	uint16_t pubkey_len, privkey_len;
@@ -467,7 +499,11 @@ int main(int argc, char **argv)
 				}
 				break;
 			case 'p':
-				parent = strtoul(optarg, NULL, 16);
+				parent = get_parent(optarg);
+				if (parent == 0) {
+					fprintf(stderr, "Invalid parent %s\n", optarg);
+					exit(1);
+				}
 				break;
 			case 's':
 				key_size = atoi(optarg);
@@ -534,11 +570,6 @@ int main(int argc, char **argv)
 		rsa = 0;
 	}
 
-	if (parent && (parent & 0xff000000) != 0x81000000) {
-		fprintf(stderr, "you must specify a persistent parent handle\n");
-		usage(argv[0]);
-	}
-
 	if (auth) {
 		if (key) {
 			/* key length already checked */
@@ -558,12 +589,14 @@ int main(int argc, char **argv)
 		goto out_err;
 	}
 
-	if (parent == 0) {
-	  rc = tpm2_load_srk(tssContext, &parent, NULL, NULL, TPM_RH_OWNER);
+	if ((parent & 0xff000000) == 0x40000000) {
+		rc = tpm2_load_srk(tssContext, &phandle, NULL, NULL, parent);
 		if (rc) {
 			reason = "tpm2_load_srk";
 			goto out_delete;
 		}
+	} else {
+		phandle = parent;
 	}
 
 	if (wrap) {
@@ -581,7 +614,7 @@ int main(int argc, char **argv)
 			goto out_delete;
 		}
 
-		iin.parentHandle = parent;
+		iin.parentHandle = phandle;
 
 		rc = RAND_bytes(iin.encryptionKey.t.buffer, T2_AES_KEY_BYTES);
 		if (!rc) {
@@ -624,7 +657,7 @@ int main(int argc, char **argv)
 		}
 
 		/* use salted parameter encryption to hide the key */
-		rc = tpm2_get_hmac_handle(tssContext, &authHandle, parent);
+		rc = tpm2_get_hmac_handle(tssContext, &authHandle, phandle);
 		if (rc)
 			goto out_flush;
 
@@ -670,12 +703,12 @@ int main(int argc, char **argv)
 			cin.inSensitive.sensitive.userAuth.b.size = 0;
 		}
 		cin.inSensitive.sensitive.data.t.size = 0;
-		cin.parentHandle = parent;
+		cin.parentHandle = phandle;
 		cin.outsideInfo.t.size = 0;
 		cin.creationPCR.count = 0;
 
 		/* use salted parameter encryption to hide the key */
-		rc = tpm2_get_hmac_handle(tssContext, &authHandle, parent);
+		rc = tpm2_get_hmac_handle(tssContext, &authHandle, phandle);
 		if (rc)
 			goto out_flush;
 
@@ -696,7 +729,7 @@ int main(int argc, char **argv)
 		pub = &cout.outPublic;
 		priv = &cout.outPrivate;
 	}
-	tpm2_flush_srk(tssContext, parent);
+	tpm2_flush_srk(tssContext, phandle);
 	buffer = pubkey;
 	pubkey_len = 0;
 	size = sizeof(pubkey);
@@ -712,7 +745,7 @@ int main(int argc, char **argv)
 	exit(0);
 
  out_flush:
-	tpm2_flush_srk(tssContext, parent);
+	tpm2_flush_srk(tssContext, phandle);
  out_delete:
 	TSS_Delete(tssContext);
 	rmdir(dir);
