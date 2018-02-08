@@ -12,7 +12,18 @@ echo ${pid} > tpm_server.pid
 # then we derive the RSA version of the storage seed and
 # store it permanently at handle 81000001 and flush the transient
 ##
-tsspowerup && \
+a=0; while [ $a -lt 10 ]; do
+    tsspowerup
+    if [ $? -eq 0 ]; then
+	break;
+    fi
+    sleep 1
+done
+if [ $a -eq 10 ]; then
+    echo "Waited 10s for tpm_server to come up; exiting"
+    exit 1
+fi
+
 tssstartup && \
 key=$(tsscreateprimary -hi o -st -rsa|sed 's/Handle //') && \
 tssevictcontrol -hi o -ho ${key} -hp 81000001 && \
