@@ -491,6 +491,30 @@ EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub)
 	return NULL;
 }
 
+TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
+		       TPMT_PUBLIC *pub)
+{
+	ReadPublic_In rin;
+	ReadPublic_Out rout;
+	TPM_RC rc;
+
+	rin.objectHandle = handle;
+	rc = TSS_Execute (tssContext,
+			  (RESPONSE_PARAMETERS *)&rout,
+			  (COMMAND_PARAMETERS *)&rin,
+			  NULL,
+			  TPM_CC_ReadPublic,
+			  TPM_RH_NULL, NULL, 0);
+	if (rc) {
+		tpm2_error(rc, "TPM2_ReadPublic");
+		return rc;
+	}
+	if (pub)
+		*pub = rout.outPublic.publicArea;
+
+	return rc;
+}
+
 TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			    TPM_HANDLE salt_key)
 {
@@ -513,20 +537,7 @@ TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 		 * access to the public part.  It does this by keeping
 		 * key files, but request the public part just to make
 		 * sure*/
-		ReadPublic_In rin;
-		ReadPublic_Out rout;
-
-		rin.objectHandle = salt_key;
-		rc = TSS_Execute (tssContext,
-				  (RESPONSE_PARAMETERS *)&rout,
-				  (COMMAND_PARAMETERS *)&rin,
-				  NULL,
-				  TPM_CC_ReadPublic,
-				  TPM_RH_NULL, NULL, 0);
-		if (rc) {
-			tpm2_error(rc, "TPM2_ReadPublic");
-			return rc;
-		}
+		tpm2_readpublic(tssContext, salt_key,  NULL);
 		/* don't care what rout returns, the purpose of the
 		 * operation was to get the public key parameters into
 		 * the tss so it can construct the salt */

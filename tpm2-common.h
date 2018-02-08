@@ -27,5 +27,6 @@ TPMI_ECC_CURVE tpm2_get_curve_name(const EC_GROUP *g);
 const char *tpm2_curve_name_to_text(TPMI_ECC_CURVE curve);
 const char *tpm2_set_unique_tssdir(void);
 TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir);
-
+TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
+		       TPMT_PUBLIC *pub);
 #endif
