@@ -262,7 +262,8 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 	in.inPublic.publicArea.parameters.eccDetail.curveID = TPM_ECC_NIST_P256;
 	in.inPublic.publicArea.parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
 
-	in.inPublic.publicArea.unique.rsa.t.size = 0;
+	in.inPublic.publicArea.unique.ecc.x.t.size = 0;
+	in.inPublic.publicArea.unique.ecc.y.t.size = 0;
 	in.inPublic.publicArea.authPolicy.t.size = 0;
 
 	rc = TSS_Execute(tssContext,
