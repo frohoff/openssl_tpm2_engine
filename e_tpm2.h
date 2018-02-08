@@ -9,6 +9,9 @@
 /* structure pointed to by the RSA object's app_data pointer */
 struct app_data {
 	TPM_HANDLE parent;
+	/* if key is in NV memory */
+	TPM_HANDLE key;
+	/* otherwise key is specified by blobs */
 	void *priv;
 	int priv_len;
 	void *pub;

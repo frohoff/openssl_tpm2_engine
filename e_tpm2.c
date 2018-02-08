@@ -26,6 +26,7 @@
 #include "e_tpm2.h"
 
 static char *srk_auth;
+static char *nvprefix = "//nvkey:";
 
 static int tpm2_engine_init(ENGINE * e)
 {
@@ -167,6 +168,57 @@ void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
 	}
 }
 
+static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
+				  TPM_HANDLE key,  BIO *bio,
+				  struct tpm_ui *ui, void *cb_data)
+{
+	TPMT_PUBLIC p;
+	TSS_CONTEXT *tssContext;
+	TPM_RC rc;
+	struct app_data *app_data;
+	EVP_PKEY *pkey;
+
+	if (!ppkey)
+		return 1;
+
+	app_data = OPENSSL_malloc(sizeof(*app_data));
+
+	if (!app_data) {
+		fprintf(stderr, "Failed to allocate app_data\n");
+		return 0;
+	}
+	memset(app_data, 0, sizeof(*app_data));
+
+	app_data->dir = tpm2_set_unique_tssdir();
+
+	rc = tpm2_create(&tssContext, app_data->dir);
+	if (rc)
+		goto err;
+	rc = tpm2_readpublic(tssContext, key, &p);
+	if (rc)
+		goto err_del;
+	pkey = tpm2_to_openssl_public(&p);
+	if (!pkey) {
+		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
+		goto err_del;
+	}
+	app_data->key = key;
+
+	tpm2_bind_key_to_engine(pkey, app_data);
+
+	*ppkey = pkey;
+	TSS_Delete(tssContext);
+
+	return 1;
+
+ err_del:
+	TSS_Delete(tssContext);
+ err:
+	tpm2_delete(app_data);
+
+	return 0;
+}
+
 static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     const char *key_id,  BIO *bio,
 				     struct tpm_ui *ui, void *cb_data)
@@ -180,10 +232,23 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	struct app_data *app_data;
 	char oid[128];
 	int empty_auth;
+	const int nvkey_len = strlen(nvprefix);
 
 	if (!key_id && !bio) {
 		fprintf(stderr, "key_id or bio is NULL\n");
 		return 0;
+	}
+
+	if (strncmp(nvprefix, key_id, nvkey_len) == 0) {
+		TPM_HANDLE key;
+
+		key = strtoul(key_id + nvkey_len, NULL, 16);
+		if ((key & 0xff000000) != 0x81000000) {
+			fprintf(stderr, "nvkey is not an NV index\n");
+			return 0;
+		}
+		return tpm2_engine_load_nvkey(e, ppkey, key, bio,
+					      ui, cb_data);
 	}
 
 	if (bio)
@@ -360,6 +425,11 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	rc = tpm2_create(&tssContext, app_data->dir);
 	if (rc)
 		return 0;
+
+	if (app_data->key) {
+		key = app_data->key;
+		goto out;
+	}
 
 	buffer = app_data->priv;
 	size = app_data->priv_len;
