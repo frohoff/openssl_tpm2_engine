@@ -740,7 +740,7 @@ int main(int argc, char **argv)
 	TSS_TPM2B_PRIVATE_Marshal(priv, &privkey_len, &buffer, &size);
 	openssl_write_tpmfile(filename, pubkey, pubkey_len, privkey, privkey_len, auth == NULL, parent);
 	TSS_Delete(tssContext);
-	rmdir(dir);
+	tpm2_rm_tssdir(dir, 0);
 
 	exit(0);
 

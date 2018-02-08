@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <arpa/inet.h>
 
@@ -804,6 +805,25 @@ const char *tpm2_set_unique_tssdir(void)
 
 	dir = mkdtemp(template);
 	return dir;
+}
+
+static void tpm2_rm_keyfile(const char *dir, TPM_HANDLE key)
+{
+	char keyfile[1024];
+
+	snprintf(keyfile, sizeof(keyfile), "%s/h%08x.bin", dir, key);
+	unlink(keyfile);
+	snprintf(keyfile, sizeof(keyfile), "%s/hp%08x.bin", dir, key);
+	unlink(keyfile);
+}
+
+void tpm2_rm_tssdir(const char *dir, TPM_HANDLE extrakey)
+{
+	if (extrakey)
+		tpm2_rm_keyfile(dir, extrakey);
+	tpm2_rm_keyfile(dir, 0x81000001);
+	if (rmdir(dir) < 0)
+		perror("Unlinking TPM_DATA_DIR");
 }
 
 TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir)

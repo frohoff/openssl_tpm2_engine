@@ -29,4 +29,5 @@ const char *tpm2_set_unique_tssdir(void);
 TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir);
 TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 		       TPMT_PUBLIC *pub);
+void tpm2_rm_tssdir(const char *dir, TPM_HANDLE extrakey);
 #endif

@@ -479,8 +479,7 @@ void tpm2_delete(struct app_data *app_data)
 	OPENSSL_free(app_data->priv);
 	OPENSSL_free(app_data->pub);
 
-	if (rmdir(app_data->dir) < 0)
-		perror("Unlinking TPM_DATA_DIR");
+	tpm2_rm_tssdir(app_data->dir, app_data->key);
 
 	OPENSSL_free((void *)app_data->dir);
 
