@@ -47,7 +47,7 @@ static int tpm2_create_srk_policy(char *secret)
 		srk_auth = NULL;
 	} else {
 		len = strlen(secret);
-		srk_auth = OPENSSL_malloc(len);
+		srk_auth = OPENSSL_malloc(len+1);
 		strcpy(srk_auth, secret);
 	}
 	return 1;
@@ -69,11 +69,10 @@ static int tpm2_engine_ctrl(ENGINE * e, int cmd, long i, void *p, void (*f) ())
 }
 
 /* The definitions for control commands specific to this engine */
-#define TPM2_CMD_PIN		ENGINE_CMD_BASE
 static const ENGINE_CMD_DEFN tpm2_cmd_defns[] = {
-	{TPM2_CMD_PIN,
+	{TPM_CMD_PIN,
 	 "PIN",
-	 "Specifies the secret for the SRK (default is plaintext, else set SECRET_MODE)",
+	 "Specifies the authorization for the parent primary key (default EmptyAuth)",
 	 ENGINE_CMD_FLAG_STRING},
 	/* end */
 	{0, NULL, NULL, 0}
@@ -452,6 +451,7 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	TPM_RC rc;
 	BYTE *buffer;
 	INT32 size;
+	TPM_HANDLE session;
 
 	rc = tpm2_create(&tssContext, app_data->dir);
 	if (rc)
@@ -473,22 +473,28 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	if ((app_data->parent & 0xff000000) == 0x81000000) {
 		in.parentHandle = app_data->parent;
 	} else {
-		rc = tpm2_load_srk(tssContext, &in.parentHandle, NULL, NULL, app_data->parent);
+		rc = tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL, app_data->parent);
 		if (rc)
 			goto out;
 	}
+	rc = tpm2_get_hmac_handle(tssContext, &session, in.parentHandle);
+	if (rc)
+		goto out_flush_srk;
 	rc = TSS_Execute(tssContext,
 			 (RESPONSE_PARAMETERS *)&out,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_Load,
-			 TPM_RS_PW, NULL, 0,
+			 session, srk_auth, 0,
 			 TPM_RH_NULL, NULL, 0);
-	if (rc)
+	if (rc) {
 		tpm2_error(rc, "TPM2_Load");
+		tpm2_flush_handle(tssContext, session);
+	}
 	else
 		key = out.objectHandle;
 
+ out_flush_srk:
 	tpm2_flush_srk(tssContext, in.parentHandle);
  out:
 	if (!key)

@@ -28,6 +28,7 @@
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
+	{"auth-parent", 1, 0, 'b'},
 	{"help", 0, 0, 'h'},
 	{"key-size", 1, 0, 's'},
 	{"name-scheme", 1, 0, 'n'},
@@ -51,6 +52,8 @@ usage(char *argv0)
 	fprintf(stdout, "Usage: %s [options] <filename>\n\n"
 		"Options:\n"
 		"\t-a, --auth                    require a password for the key [NO]\n"
+		"\t-b, --auth-parent <pwd>       Specify the parent key password\n"
+		"\t                              (default EmptyAuth)\n"
 		"\t-d, --da                      mark the key as having Dictionary Attack implications.  This means that if\n"
 		"\t                              the key password is incorrectly presented too many times, the TPM may\n"
 		"\t                              Implement DA mitigation and refuse connections for a while\n"
@@ -459,7 +462,7 @@ int main(int argc, char **argv)
 	int32_t size, key_size = 0;
 	TPM2B_PUBLIC *pub;
 	TPM2B_PRIVATE *priv;
-	char *key = NULL;
+	char *key = NULL, *parent_auth = NULL;
 	TPMI_ECC_CURVE ecc = TPM_ECC_NONE;
 	int rsa = -1;
 	uint32_t noda = TPMA_OBJECT_NODA;
@@ -468,7 +471,7 @@ int main(int argc, char **argv)
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ap:hw:vk:re:ld",
+		c = getopt_long(argc, argv, "n:s:ab:p:hw:vk:re:ld",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -476,6 +479,9 @@ int main(int argc, char **argv)
 		switch (c) {
 			case 'a':
 				auth = malloc(128);
+				break;
+			case 'b':
+				parent_auth = optarg;
 				break;
 			case 'h':
 				usage(argv[0]);
@@ -590,7 +596,7 @@ int main(int argc, char **argv)
 	}
 
 	if ((parent & 0xff000000) == 0x40000000) {
-		rc = tpm2_load_srk(tssContext, &phandle, NULL, NULL, parent);
+		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent);
 		if (rc) {
 			reason = "tpm2_load_srk";
 			goto out_delete;
@@ -666,7 +672,7 @@ int main(int argc, char **argv)
 				 (COMMAND_PARAMETERS *)&iin,
 				 NULL,
 				 TPM_CC_Import,
-				 authHandle, NULL, TPMA_SESSION_DECRYPT,
+				 authHandle, parent_auth, TPMA_SESSION_DECRYPT,
 				 TPM_RH_NULL, NULL, 0);
 		if (rc) {
 			reason = "TPM2_Import";
@@ -717,7 +723,7 @@ int main(int argc, char **argv)
 				 (COMMAND_PARAMETERS *)&cin,
 				 NULL,
 				 TPM_CC_Create,
-				 authHandle, NULL, TPMA_SESSION_DECRYPT,
+				 authHandle, parent_auth, TPMA_SESSION_DECRYPT,
 				 TPM_RH_NULL, NULL, 0);
 		if (rc) {
 			reason = "TPM2_Create";

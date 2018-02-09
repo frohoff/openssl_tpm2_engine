@@ -230,15 +230,20 @@ void tpm2_error(TPM_RC rc, const char *reason)
 
 TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy)
 {
-	static TPM2B_PUBLIC srk_pub;
 	TPM_RC rc;
 	CreatePrimary_In in;
 	CreatePrimary_Out out;
+	TPM_HANDLE session;
 
 	/* SPS owner */
 	in.primaryHandle = hierarchy;
-	/* assume no owner password */
-	in.inSensitive.sensitive.userAuth.t.size = 0;
+	if (auth) {
+		in.inSensitive.sensitive.userAuth.t.size = strlen(auth);
+		memcpy(in.inSensitive.sensitive.userAuth.t.buffer, auth, strlen(auth));
+	} else {
+		in.inSensitive.sensitive.userAuth.t.size = 0;
+	}
+
 	/* no sensitive date for storage keys */
 	in.inSensitive.sensitive.data.t.size = 0;
 	/* no outside info */
@@ -266,23 +271,29 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 	in.inPublic.publicArea.unique.ecc.y.t.size = 0;
 	in.inPublic.publicArea.authPolicy.t.size = 0;
 
+	/* use a bound session here because we have no known key objects
+	 * to encrypt a salt to */
+	rc = tpm2_get_bound_handle(tssContext, &session, hierarchy, auth);
+	if (rc)
+		return rc;
+
 	rc = TSS_Execute(tssContext,
 			 (RESPONSE_PARAMETERS *)&out,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_CreatePrimary,
-			 TPM_RS_PW, NULL, 0,
+			 session, auth, TPMA_SESSION_DECRYPT,
 			 TPM_RH_NULL, NULL, 0);
 
 	if (rc) {
 		tpm2_error(rc, "TSS_CreatePrimary");
+		tpm2_flush_handle(tssContext, session);
 		return rc;
 	}
 
-	srk_pub = out.outPublic;
 	*h = out.objectHandle;
 	if (pub)
-		*pub = srk_pub;
+		*pub = out.outPublic;
 
 	return 0;
 }
