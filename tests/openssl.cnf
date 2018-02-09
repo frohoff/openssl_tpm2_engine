@@ -2,6 +2,7 @@ HOME		= .
 RANDFILE	= $ENV::HOME/.rnd
 openssl_conf	= openssl_init
 SRKPIN		=
+NVPREFIX	= //nvkey:
 
 [req]
 distinguished_name = req_distinguished_name
@@ -20,3 +21,4 @@ tpm2		= tpm2_section
 dynamic_path	= $ENV::srcdir/../.libs/libtpm2.so
 init		= 1
 PIN		= $ENV::SRKPIN
+NVPREFIX	= $ENV::NVPREFIX
