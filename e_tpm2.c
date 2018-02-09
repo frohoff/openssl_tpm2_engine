@@ -26,7 +26,7 @@
 #include "e_tpm2.h"
 
 static char *srk_auth;
-static char *nvprefix = "//nvkey:";
+static char *nvprefix;
 
 static int tpm2_engine_init(ENGINE * e)
 {
@@ -35,6 +35,19 @@ static int tpm2_engine_init(ENGINE * e)
 
 static int tpm2_engine_finish(ENGINE * e)
 {
+	return 1;
+}
+
+static int tpm2_set_nvkey_prefix(char *prefix)
+{
+	int len;
+
+	if (nvprefix)
+		OPENSSL_free(nvprefix);
+	len = strlen(prefix);
+	nvprefix = OPENSSL_malloc(len+1);
+	strcpy(nvprefix, prefix);
+
 	return 1;
 }
 
@@ -54,12 +67,15 @@ static int tpm2_create_srk_policy(char *secret)
 }
 
 #define TPM_CMD_PIN ENGINE_CMD_BASE
+#define TPM_CMD_NVPREFIX (ENGINE_CMD_BASE+1)
 
 static int tpm2_engine_ctrl(ENGINE * e, int cmd, long i, void *p, void (*f) ())
 {
 	switch (cmd) {
 		case TPM_CMD_PIN:
 			return tpm2_create_srk_policy(p);
+		case TPM_CMD_NVPREFIX:
+			return tpm2_set_nvkey_prefix(p);
 		default:
 			break;
 	}
@@ -75,6 +91,10 @@ static const ENGINE_CMD_DEFN tpm2_cmd_defns[] = {
 	 "Specifies the authorization for the parent primary key (default EmptyAuth)",
 	 ENGINE_CMD_FLAG_STRING},
 	/* end */
+	{TPM_CMD_NVPREFIX,
+	 "NVPREFIX",
+	 "Specifies the prefix for an NV key (default //nvkey:)",
+	 ENGINE_CMD_FLAG_STRING},
 	{0, NULL, NULL, 0}
 };
 
@@ -435,6 +455,7 @@ static int tpm2_bind_fn(ENGINE * e, const char *id)
 		       id, engine_tpm2_id);
 		return 0;
 	}
+	tpm2_set_nvkey_prefix("//nvkey:");
 	if (!tpm2_bind_helper(e)) {
 		fprintf(stderr, "tpm2_bind_helper failed\n");
 		return 0;
