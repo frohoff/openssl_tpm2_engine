@@ -3,6 +3,7 @@ TESTS = fail_connect.sh \
 	check_tpm_directory.sh \
 	check_curves.sh \
 	create_tpm_key.sh \
+	create_tpm_key_auth.sh \
 	check_auth.sh \
 	wrap_tpm_key.sh \
 	check_wrap_auth.sh \

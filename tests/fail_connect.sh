@@ -54,7 +54,7 @@ if [ $? -ne 1 ]; then
     exit 1
 fi
 cat tmp.txt
-grep -q 'TPM2_Load failed' tmp.txt || exit 1
+grep -q 'TPM2_StartAuthSession failed' tmp.txt || exit 1
 grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
 
 rm -f tmp.tpm tmp.txt
