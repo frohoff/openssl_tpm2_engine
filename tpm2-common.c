@@ -517,6 +517,40 @@ TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 	return rc;
 }
 
+TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
+			     TPM_HANDLE bind, const char *auth)
+{
+	TPM_RC rc;
+	StartAuthSession_In in;
+	StartAuthSession_Out out;
+	StartAuthSession_Extra extra;
+
+	memset(&in, 0, sizeof(in));
+	memset(&extra, 0 , sizeof(extra));
+	in.bind = bind;
+	extra.bindPassword = auth;
+	in.sessionType = TPM_SE_HMAC;
+	in.authHash = TPM_ALG_SHA256;
+	in.tpmKey = TPM_RH_NULL;
+	in.symmetric.algorithm = TPM_ALG_AES;
+	in.symmetric.keyBits.aes = 128;
+	in.symmetric.mode.aes = TPM_ALG_CFB;
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 (EXTRA_PARAMETERS *)&extra,
+			 TPM_CC_StartAuthSession,
+			 TPM_RH_NULL, NULL, 0);
+	if (rc) {
+		tpm2_error(rc, "TPM2_StartAuthSession");
+		return rc;
+	}
+
+	*handle = out.sessionHandle;
+
+	return TPM_RC_SUCCESS;
+}
+
 TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			    TPM_HANDLE salt_key)
 {

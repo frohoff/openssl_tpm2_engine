@@ -11,6 +11,8 @@ EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub);
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK);
 TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			    TPM_HANDLE salt_key);
+TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
+			     TPM_HANDLE bind, const char *auth);
 TPM_RC tpm2_SensitiveToDuplicate(TPMT_SENSITIVE *s,
 				 TPM2B_NAME *name,
 				 TPM_ALG_ID nalg,

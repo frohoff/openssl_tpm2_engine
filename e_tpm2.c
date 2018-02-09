@@ -177,6 +177,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	TPM_RC rc;
 	struct app_data *app_data;
 	EVP_PKEY *pkey;
+	int askauth = 0;
 
 	if (!ppkey)
 		return 1;
@@ -203,6 +204,36 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 		goto err_del;
 	}
 	app_data->key = key;
+
+	if (p.objectAttributes.val & TPMA_OBJECT_NODA) {
+		/* no DA implications, try an authorization and see
+		 * if NULL is accepted */
+		ReadPublic_In rin;
+		ReadPublic_Out rout;
+		TPM_HANDLE session;
+
+		rin.objectHandle = key;
+		rc = tpm2_get_bound_handle(tssContext, &session, key, NULL);
+		if (rc == TPM_RC_SUCCESS) {
+			rc = TSS_Execute(tssContext,
+					 (RESPONSE_PARAMETERS *)&rout,
+					 (COMMAND_PARAMETERS *)&rin,
+					 NULL,
+					 TPM_CC_ReadPublic,
+					 session, NULL, TPMA_SESSION_ENCRYPT,
+					 TPM_RH_NULL, NULL, 0);
+			if (rc)
+				tpm2_flush_handle(tssContext, session);
+		}
+		if (rc != TPM_RC_SUCCESS)
+			askauth = 1;
+	} else {
+		/* assume since we have DA implications, we have a password */
+		askauth = 1;
+	}
+
+	if (askauth)
+		app_data->auth = tpm2_get_auth(ui, "TPM NV Key Password: ", cb_data);
 
 	tpm2_bind_key_to_engine(pkey, app_data);
 
