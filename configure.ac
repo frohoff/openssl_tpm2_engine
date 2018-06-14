@@ -23,6 +23,10 @@ if test "$test_CFLAGS" != set; then
 	fi
 fi
 
+##
+# ibmtss >= 1234 now requires TPM_POSIX be set
+CFLAGS="$CFLAGS -DTPM_POSIX"
+
 #if test "${OPENSSL_LIB_DIR+set}" != set; then
 #	OPENSSL_LIB_DIR="/usr/local/ssl/lib"
 #fi
@@ -69,8 +73,8 @@ AC_SUBST(enginesdir)
 PKG_PROG_PKG_CONFIG
 PKG_CHECK_MODULES([DEPS], [libcrypto])
 
-AC_SEARCH_LIBS([TSS_Create], [tss], [], [
-	AC_MSG_ERROR([Unable to find libtss])
+AC_SEARCH_LIBS([TSS_Create], [tss ibmtss], [], [
+	AC_MSG_ERROR([Unable to find the TSS2 library])
 ])
 
 AC_DISABLE_STATIC
