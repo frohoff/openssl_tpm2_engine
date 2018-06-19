@@ -19,9 +19,10 @@
 #include <openssl/err.h>
 #include <openssl/rand.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssmarshal.h>
+#define TSSINCLUDE(x) < TSS_INCLUDE/x >
+#include TSSINCLUDE(tss.h)
+#include TSSINCLUDE(tssutils.h)
+#include TSSINCLUDE(tssmarshal.h)
 
 #include "tpm2-asn.h"
 #include "tpm2-common.h"

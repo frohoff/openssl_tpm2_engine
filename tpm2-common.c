@@ -13,11 +13,12 @@
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/tsscrypto.h>
-#include <tss2/tsscryptoh.h>
+#define TSSINCLUDE(x) < TSS_INCLUDE/x >
+#include TSSINCLUDE(tss.h)
+#include TSSINCLUDE(tssresponsecode.h)
+#include TSSINCLUDE(tssmarshal.h)
+#include TSSINCLUDE(tsscrypto.h)
+#include TSSINCLUDE(tsscryptoh.h)
 
 #include "tpm2-common.h"
 

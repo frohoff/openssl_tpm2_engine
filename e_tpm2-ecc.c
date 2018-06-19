@@ -16,11 +16,12 @@
 #include <openssl/sha.h>
 #include <openssl/bn.h>
 
-#include <tss2/tss.h>
-#include <tss2/tssutils.h>
-#include <tss2/tssmarshal.h>
-#include <tss2/tssresponsecode.h>
-#include <tss2/Unmarshal_fp.h>
+#define TSSINCLUDE(x) < TSS_INCLUDE/x >
+#include TSSINCLUDE(tss.h)
+#include TSSINCLUDE(tssutils.h)
+#include TSSINCLUDE(tssmarshal.h)
+#include TSSINCLUDE(tssresponsecode.h)
+#include TSSINCLUDE(Unmarshal_fp.h)
 
 #include "tpm2-common.h"
 #include "e_tpm2.h"
