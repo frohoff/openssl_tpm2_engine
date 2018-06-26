@@ -101,7 +101,8 @@ static int tpm2_rsa_pub_enc(int flen,
 
 #endif
 
-static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, char **auth)
+static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
+					 char **auth, TPM_SE *sessionType)
 {
 	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
 
@@ -109,6 +110,8 @@ static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext, cha
 		return 0;
 
 	*auth = app_data->auth;
+	*sessionType = app_data->req_policy_session ?
+		       TPM_SE_POLICY : TPM_SE_HMAC;
 	return tpm2_load_key(tssContext, app_data);
 }
 
@@ -154,8 +157,10 @@ static int tpm2_rsa_priv_dec(int flen,
 	TSS_CONTEXT *tssContext;
 	char *auth;
 	TPM_HANDLE authHandle;
+	TPM_SE sessionType;
 
-	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
+	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
+					      &sessionType);
 
 	if (in.keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
@@ -174,7 +179,7 @@ static int tpm2_rsa_priv_dec(int flen,
 	memcpy(in.cipherText.t.buffer, from, flen);
 	in.label.t.size = 0;
 
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, TPM_SE_HMAC);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType);
 	if (rc)
 		goto out;
 
@@ -214,13 +219,15 @@ static int tpm2_rsa_priv_enc(int flen,
 	TSS_CONTEXT *tssContext;
 	char *auth;
 	TPM_HANDLE authHandle;
+	TPM_SE sessionType;
 
 	if (padding != RSA_PKCS1_PADDING) {
 		fprintf(stderr, "Non PKCS1 padding asked for\n");
 		return -1;
 	}
 
-	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth);
+	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
+					      &sessionType);
 
 	if (in.keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
@@ -229,7 +236,7 @@ static int tpm2_rsa_priv_enc(int flen,
 	}
 
 	rv = -1;
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, TPM_SE_HMAC);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType);
 	if (rc)
 		goto out;
 

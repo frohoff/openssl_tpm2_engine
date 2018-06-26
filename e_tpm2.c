@@ -390,6 +390,9 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 			goto err_free_key;
 	}
 
+	if (!(p.publicArea.objectAttributes.val & TPMA_OBJECT_USERWITHAUTH))
+		app_data->req_policy_session = 1;
+
 	TSSLOADABLE_free(tssl);
 
 	tpm2_bind_key_to_engine(pkey, app_data);

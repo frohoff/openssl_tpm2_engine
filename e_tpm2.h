@@ -18,6 +18,7 @@ struct app_data {
 	int pub_len;
 	char *auth;
 	const char *dir;
+	int req_policy_session;
 };
 
 TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data);
