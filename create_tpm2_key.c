@@ -12,6 +12,11 @@
 #include <strings.h>
 #include <errno.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <ctype.h>
+
+#include <sys/stat.h>
+#include <sys/mman.h>
 
 #include <openssl/rsa.h>
 #include <openssl/pem.h>
@@ -23,6 +28,8 @@
 #include TSSINCLUDE(tss.h)
 #include TSSINCLUDE(tssutils.h)
 #include TSSINCLUDE(tssmarshal.h)
+#include TSSINCLUDE(Unmarshal_fp.h)
+#include TSSINCLUDE(tsscryptoh.h)
 
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
@@ -41,6 +48,7 @@ static struct option long_options[] = {
 	{"ecc", 1, 0, 'e'},
 	{"list-curves", 0, 0, 'l'},
 	{"da", 0, 0, 'd'},
+	{"key-policy", 1, 0, 'c'},
 	{0, 0, 0, 0}
 };
 
@@ -75,6 +83,7 @@ usage(char *argv0)
 		"\t-e, --ecc <curve>             Create an ECC key using the specified curve.\n"
 		"\t                              Supported curves are bnp256, nisp256, nisp384\n"
 		"\t-l, --list-curves             List all the Elliptic Curves the TPM supports\n"
+		"\t-c, --key-policy              Specify a policy for the TPM key\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -89,10 +98,121 @@ openssl_print_errors()
 	ERR_print_errors_fp(stderr);
 }
 
+/* from lib/hexdump.c (Linux kernel) */
+int hex_to_bin(char ch)
+{
+	if ((ch >= '0') && (ch <= '9'))
+		return ch - '0';
+	ch = tolower(ch);
+	if ((ch >= 'a') && (ch <= 'f'))
+		return ch - 'a' + 10;
+	return -1;
+}
+
+int hex2bin(unsigned char *dst, const char *src, size_t count)
+{
+	while (count--) {
+		int hi = hex_to_bin(*src++);
+		int lo = hex_to_bin(*src++);
+
+		if ((hi < 0) || (lo < 0))
+			return -1;
+
+		*dst++ = (hi << 4) | lo;
+	}
+	return 0;
+}
+
+int parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
+		      char *auth, TPMT_HA *digest)
+{
+	struct stat st;
+	char *data, *data_ptr;
+	unsigned char buf[2048];
+	unsigned char *buf_ptr;
+	TSSOPTPOLICY *policy = NULL;
+	INT32 buf_len;
+	TPM_CC code;
+	int rc = 0, fd, policy_auth_value = 0;
+
+	if (stat(policy_file, &st) == -1) {
+		fprintf(stderr, "File %s cannot be accessed\n", policy_file);
+		return 1;
+	}
+
+	fd = open(policy_file, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "File %s cannot be opened\n", policy_file);
+		return 1;
+	}
+
+	data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE, fd, 0);
+	if (!data) {
+		fprintf(stderr, "mmap() failed\n");
+		rc = 1;
+		goto out;
+	}
+
+	while ((data_ptr = strsep(&data, "\n"))) {
+		buf_ptr = buf;
+		buf_len = strlen(data_ptr) / 2;
+		if (buf_len > sizeof(buf)) {
+			fprintf(stderr, "line too long\n");
+			goto out_err;
+		}
+
+		if (!buf_len)
+			break;
+
+		rc = hex2bin(buf, data_ptr, buf_len);
+		if (rc < 0) {
+			fprintf(stderr, "hex2bin() failed\n");
+			goto out_err;
+		}
+
+		rc = TSS_Hash_Generate(digest,
+				       TSS_GetDigestSize(digest->hashAlg),
+				       (uint8_t *)&digest->digest,
+				       buf_len, buf_ptr, 0, NULL);
+		if (rc) {
+			fprintf(stderr, "TSS_Hash_Generate() failed\n");
+			goto out_err;
+		}
+
+		rc = TPM_CC_Unmarshal(&code, &buf_ptr, &buf_len);
+		if (rc) {
+			fprintf(stderr, "TPM_CC_Unmarshal() failed\n");
+			goto out_err;
+		}
+
+		if (code == TPM_CC_PolicyAuthValue)
+			policy_auth_value = 1;
+
+		policy = TSSOPTPOLICY_new();
+		ASN1_INTEGER_set(policy->CommandCode, code);
+		ASN1_STRING_set(policy->CommandPolicy, buf_ptr, buf_len);
+		sk_TSSOPTPOLICY_push(sk, policy);
+	}
+
+	if (auth && !policy_auth_value) {
+		fprintf(stderr, "PolicyAuthValue command is required\n");
+		goto out_err;
+	}
+out_munmap:
+	munmap(data, st.st_size);
+out:
+	close(fd);
+	return rc;
+out_err:
+	rc = EXIT_FAILURE;
+	goto out_munmap;
+}
+
 int
 openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		      BYTE *privkey, int privkey_len, int empty_auth,
-		      TPM_HANDLE parent)
+		      TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk)
 {
 	TSSLOADABLE tssl;
 	BIO *outb;
@@ -112,6 +232,7 @@ openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 	ASN1_STRING_set(tssl.pubkey, pubkey, pubkey_len);
 	tssl.privkey = ASN1_OCTET_STRING_new();
 	ASN1_STRING_set(tssl.privkey, privkey, privkey_len);
+	tssl.policy = sk;
 
 	PEM_write_bio_TSSLOADABLE(outb, &tssl);
 	BIO_free(outb);
@@ -450,9 +571,20 @@ static TPM_HANDLE get_parent(const char *pstr)
 	return 0;
 }
 
+void free_policy(STACK_OF(TSSOPTPOLICY) *sk)
+{
+	TSSOPTPOLICY *policy;
+
+	if (sk)
+		while ((policy = sk_TSSOPTPOLICY_pop(sk)))
+			TSSOPTPOLICY_free(policy);
+
+	sk_TSSOPTPOLICY_free(sk);
+}
+
 int main(int argc, char **argv)
 {
-	char *filename, *wrap = NULL, *auth = NULL;
+	char *filename, *wrap = NULL, *auth = NULL, *policyFilename = NULL;
 	int option_index, c;
 	const char *reason = "";
 	TSS_CONTEXT *tssContext = NULL;
@@ -469,10 +601,14 @@ int main(int argc, char **argv)
 	uint32_t noda = TPMA_OBJECT_NODA;
 	TPM_HANDLE authHandle;
 	const char *dir;
+	STACK_OF(TSSOPTPOLICY) *sk = NULL;
+
+	uint32_t sizeInBytes;
+	TPMT_HA digest;
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ab:p:hw:vk:re:ld",
+		c = getopt_long(argc, argv, "n:s:ab:p:hw:vk:re:ldc:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -548,6 +684,9 @@ int main(int argc, char **argv)
 			case 'd':
 				noda = 0;
 				break;
+			case 'c':
+				policyFilename = optarg;
+				break;
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
@@ -606,6 +745,22 @@ int main(int argc, char **argv)
 		phandle = parent;
 	}
 
+	digest.hashAlg = TPM_ALG_SHA256;
+	sizeInBytes = TSS_GetDigestSize(digest.hashAlg);
+	memset((uint8_t *)&digest.digest, 0, sizeInBytes);
+
+	if (policyFilename) {
+		sk = sk_TSSOPTPOLICY_new_null();
+		if (!sk)
+			goto out_flush;
+
+		rc = parse_policy_file(policyFilename, sk, auth, &digest);
+		if (rc) {
+			reason = "parse_policy_file";
+			goto out_flush;
+		}
+	}
+
 	if (wrap) {
 		Import_In iin;
 		Import_Out iout;
@@ -618,7 +773,7 @@ int main(int argc, char **argv)
 		pkey = openssl_read_key(wrap);
 		if (!pkey) {
 			reason = "unable to read key";
-			goto out_delete;
+			goto out_flush;
 		}
 
 		iin.parentHandle = phandle;
@@ -626,7 +781,7 @@ int main(int argc, char **argv)
 		rc = RAND_bytes(iin.encryptionKey.t.buffer, T2_AES_KEY_BYTES);
 		if (!rc) {
 			reason = "Can't get a random AES key for parameter encryption";
-			goto out_delete;
+			goto out_flush;
 		}
 		iin.encryptionKey.t.size = T2_AES_KEY_BYTES;
 		/* set random iin.symSeed */
@@ -645,6 +800,20 @@ int main(int argc, char **argv)
 			reason = "openssl_to_tpm_public";
 			goto out_flush;
 		}
+
+		if (policyFilename) {
+			iin.objectPublic.publicArea.objectAttributes.val &=
+				~TPMA_OBJECT_USERWITHAUTH;
+			rc = TSS_TPM2B_Create(
+				&iin.objectPublic.publicArea.authPolicy.b,
+				(uint8_t *)&digest.digest, sizeInBytes,
+				sizeof(TPMU_HA));
+			if (rc) {
+				reason = "set policy";
+				goto out_flush;
+			}
+		}
+
 		/* set the NODA flag */
 		iin.objectPublic.publicArea.objectAttributes.val |= noda;
 		rc = tpm2_ObjectPublic_GetName(&name,
@@ -699,6 +868,19 @@ int main(int argc, char **argv)
 			tpm2_public_template_ecc(&cin.inPublic.publicArea, ecc);
 		}
 
+		if (policyFilename) {
+			cin.inPublic.publicArea.objectAttributes.val &=
+				~TPMA_OBJECT_USERWITHAUTH;
+			rc = TSS_TPM2B_Create(
+				&cin.inPublic.publicArea.authPolicy.b,
+				(uint8_t *)&digest.digest, sizeInBytes,
+				sizeof(TPMU_HA));
+			if (rc) {
+				reason = "set policy";
+				goto out_flush;
+			}
+		}
+
 		cin.inPublic.publicArea.objectAttributes.val |=
 			noda |
 			TPMA_OBJECT_SENSITIVEDATAORIGIN;
@@ -747,7 +929,9 @@ int main(int argc, char **argv)
 	privkey_len = 0;
 	size = sizeof(privkey);
 	TSS_TPM2B_PRIVATE_Marshal(priv, &privkey_len, &buffer, &size);
-	openssl_write_tpmfile(filename, pubkey, pubkey_len, privkey, privkey_len, auth == NULL, parent);
+	openssl_write_tpmfile(filename, pubkey, pubkey_len,
+			      privkey, privkey_len, auth == NULL, parent, sk);
+	free_policy(sk);
 	TSS_Delete(tssContext);
 	tpm2_rm_tssdir(dir, 0);
 
@@ -755,6 +939,7 @@ int main(int argc, char **argv)
 
  out_flush:
 	tpm2_flush_srk(tssContext, phandle);
+	free_policy(sk);
  out_delete:
 	TSS_Delete(tssContext);
 	rmdir(dir);

@@ -37,16 +37,35 @@ RUNNING
 		-n|--name-scheme   name algorithm to use sha1 [sha256] sha384 sha512
 		-p|--parent-handle persistent handle of parent key
 		-w|--wrap [file]   wrap an existing openssl PEM key
+		-c|--key-policy [file] TPM key policy
 
 
-  Key auth: Default=none. if -a is specified, you will be prompted on the
+  Key auth: Default=none. If -a is specified, you will be prompted on the
 command line using OpenSSL for a passphrase. 
+
+  Key enhanced auth (NEW): Default=none. If -c is specified, the new key
+  will be associated with the policy provided.
 
 OpenSSL TPM engine
 
   Included in this package is a sample openssl.cnf file, which can be used
 to turn on use of the TPM engine in apps where OpenSSL config support is
 compiled in.
+
+Policy File Format
+
+  The policy file should contain a rule for each line, where rules
+  can be generated for example with the policymakerpcr tool from IBM TSS.
+
+  Example (PolicyPCR):
+
+  $ tsspolicymakerpcr -bm 10000 -if policypcr16aaasha256.txt -v -pr -of policies/policypcr.txt >> policy.txt
+
+  where policypcr16aaasha256.txt contains the desired value of PCR 16.
+
+  Example (PolicyAuthValue):
+
+  $ echo 0000016b >> policy.txt
 
 
 USES
