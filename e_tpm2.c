@@ -270,6 +270,46 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	return 0;
 }
 
+static int tpm2_engine_load_key_policy(struct app_data *app_data,
+				       TSSLOADABLE *tssl)
+{
+	struct policy_command *command;
+	TSSOPTPOLICY *policy;
+	int i, commands_len;
+
+	app_data->num_commands = sk_TSSOPTPOLICY_num(tssl->policy);
+	if (app_data->num_commands <= 0)
+		return 1;
+
+	commands_len = sizeof(struct policy_command) * app_data->num_commands;
+	app_data->commands = OPENSSL_malloc(commands_len);
+	if (!app_data->commands)
+		return 0;
+
+	for (i = 0; i < app_data->num_commands; i++) {
+		policy = sk_TSSOPTPOLICY_value(tssl->policy, i);
+		if (!policy)
+			return 0;
+
+		command = app_data->commands + i;
+		command->code = ASN1_INTEGER_get(policy->CommandCode);
+		command->size = policy->CommandPolicy->length;
+		command->policy = NULL;
+
+		if (!command->size)
+			continue;
+
+		command->policy = OPENSSL_malloc(command->size);
+		if (!command->policy)
+			return 0;
+
+		memcpy(command->policy, policy->CommandPolicy->data,
+		       command->size);
+	}
+
+	return 1;
+}
+
 static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     const char *key_id,  BIO *bio,
 				     struct tpm_ui *ui, void *cb_data)
@@ -392,6 +432,9 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 
 	if (!(p.publicArea.objectAttributes.val & TPMA_OBJECT_USERWITHAUTH))
 		app_data->req_policy_session = 1;
+
+	if (!tpm2_engine_load_key_policy(app_data, tssl))
+		goto err_free_key;
 
 	TSSLOADABLE_free(tssl);
 
@@ -539,6 +582,12 @@ void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key)
 
 void tpm2_delete(struct app_data *app_data)
 {
+	int i;
+
+	for (i = 0; i < app_data->num_commands; i++)
+		OPENSSL_free(app_data->commands[i].policy);
+
+	OPENSSL_free(app_data->commands);
 	OPENSSL_free(app_data->priv);
 	OPENSSL_free(app_data->pub);
 
