@@ -499,7 +499,8 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 		if (rc)
 			goto out;
 	}
-	rc = tpm2_get_hmac_handle(tssContext, &session, in.parentHandle);
+	rc = tpm2_get_session_handle(tssContext, &session, in.parentHandle,
+				     TPM_SE_HMAC);
 	if (rc)
 		goto out_flush_srk;
 	rc = TSS_Execute(tssContext,

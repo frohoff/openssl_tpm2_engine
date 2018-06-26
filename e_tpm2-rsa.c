@@ -174,7 +174,7 @@ static int tpm2_rsa_priv_dec(int flen,
 	memcpy(in.cipherText.t.buffer, from, flen);
 	in.label.t.size = 0;
 
-	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, TPM_SE_HMAC);
 	if (rc)
 		goto out;
 
@@ -229,7 +229,7 @@ static int tpm2_rsa_priv_enc(int flen,
 	}
 
 	rv = -1;
-	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, TPM_SE_HMAC);
 	if (rc)
 		goto out;
 

@@ -163,7 +163,7 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	in.validation.digest.t.size = 0;
 
 	sig = NULL;
-	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, TPM_SE_HMAC);
 	if (rc)
 		goto out;
 
@@ -240,7 +240,7 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	in.inPoint.point.y.t.size = len;
 
 	ret = 0;
-	rc = tpm2_get_hmac_handle(tssContext, &authHandle, 0);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, TPM_SE_HMAC);
 	if (rc)
 		goto out;
 

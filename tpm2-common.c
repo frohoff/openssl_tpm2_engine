@@ -563,8 +563,8 @@ TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	return TPM_RC_SUCCESS;
 }
 
-TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
-			    TPM_HANDLE salt_key)
+TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
+			       TPM_HANDLE salt_key, TPM_SE sessionType)
 {
 	TPM_RC rc;
 	StartAuthSession_In in;
@@ -574,7 +574,7 @@ TPM_RC tpm2_get_hmac_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	memset(&in, 0, sizeof(in));
 	memset(&extra, 0 , sizeof(extra));
 	in.bind = TPM_RH_NULL;
-	in.sessionType = TPM_SE_HMAC;
+	in.sessionType = sessionType;
 	in.authHash = TPM_ALG_SHA256;
 	in.tpmKey = TPM_RH_NULL;
 	in.symmetric.algorithm = TPM_ALG_AES;

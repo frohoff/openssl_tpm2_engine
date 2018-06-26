@@ -664,7 +664,8 @@ int main(int argc, char **argv)
 		}
 
 		/* use salted parameter encryption to hide the key */
-		rc = tpm2_get_hmac_handle(tssContext, &authHandle, phandle);
+		rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
+					     TPM_SE_HMAC);
 		if (rc)
 			goto out_flush;
 
@@ -715,7 +716,8 @@ int main(int argc, char **argv)
 		cin.creationPCR.count = 0;
 
 		/* use salted parameter encryption to hide the key */
-		rc = tpm2_get_hmac_handle(tssContext, &authHandle, phandle);
+		rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
+					     TPM_SE_HMAC);
 		if (rc)
 			goto out_flush;
 
