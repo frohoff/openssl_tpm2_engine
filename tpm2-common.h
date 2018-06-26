@@ -4,6 +4,12 @@
 #define	T2_AES_KEY_BITS		128
 #define T2_AES_KEY_BYTES	(T2_AES_KEY_BITS/8)
 
+struct policy_command {
+	TPM_CC code;
+	INT32 size;
+	BYTE *policy;
+};
+
 void tpm2_error(TPM_RC rc, const char *reason);
 TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth, TPM2B_PUBLIC *pub, TPM_HANDLE handle);
 void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h);
@@ -11,6 +17,8 @@ EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub);
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK);
 TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			       TPM_HANDLE salt_key, TPM_SE sessionType);
+TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
+			 int num_commands, struct policy_command *commands);
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth);
 TPM_RC tpm2_SensitiveToDuplicate(TPMT_SENSITIVE *s,

@@ -19,6 +19,7 @@
 #include TSSINCLUDE(tssmarshal.h)
 #include TSSINCLUDE(tsscrypto.h)
 #include TSSINCLUDE(tsscryptoh.h)
+#include TSSINCLUDE(Unmarshal_fp.h)
 
 #include "tpm2-common.h"
 
@@ -603,6 +604,64 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	}
 
 	*handle = out.sessionHandle;
+
+	return TPM_RC_SUCCESS;
+}
+
+/*
+ * PolicyPCR_In_Unmarshal() cannot be used because pcrs and digestTPM
+ * are inverted in the policy command.
+ */
+TPM_RC policy_pcr_unmarshal(PolicyPCR_In *target, BYTE **buffer, INT32 *size)
+{
+	return TPML_PCR_SELECTION_Unmarshal(&target->pcrs, buffer, size);
+}
+
+TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
+			 int num_commands, struct policy_command *commands)
+{
+	INT32 size;
+	BYTE *policy;
+	TPM_RC rc = 0;
+	COMMAND_PARAMETERS in;
+	int i;
+
+	((PolicyPCR_In *)&in)->policySession = handle;
+
+	for (i = 0; i < num_commands; i++) {
+		size = commands[i].size;
+		policy = commands[i].policy;
+
+		switch (commands[i].code) {
+		case TPM_CC_PolicyPCR:
+			rc = TPML_PCR_SELECTION_Unmarshal(
+				&((PolicyPCR_In *)&in)->pcrs, &policy, &size);
+			((PolicyPCR_In *)&in)->pcrDigest.b.size = 0;
+			break;
+		case TPM_CC_PolicyAuthValue:
+			break;
+		default:
+			fprintf(stderr, "Unsupported policy command %d\n",
+				commands[i].code);
+			return TPM_RC_FAILURE;
+		}
+
+		if (rc) {
+			tpm2_error(rc, "unmarshal");
+			return rc;
+		}
+
+		rc = TSS_Execute(tssContext,
+				NULL,
+				(COMMAND_PARAMETERS *)&in,
+				NULL,
+				commands[i].code,
+				TPM_RH_NULL, NULL, 0);
+		if (rc) {
+			tpm2_error(rc, "policy command");
+			return rc;
+		}
+	}
 
 	return TPM_RC_SUCCESS;
 }
