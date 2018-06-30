@@ -7,6 +7,23 @@ Can be used to create a TPM loadable representation of a private key.
 The key is either internal to the TPM or wrapped from an existing
 private key.
 
+[files]
+
+Policy File Format
+
+The policy file should contain a rule for each line, where rules
+can be generated for example with the tsspolicymakerpcr tool from IBM TSS.
+
+Example (PolicyPCR):
+
+$ tsspolicymakerpcr -bm 10000 -if policypcr16aaasha256.txt -v -pr -of policies/policypcr.txt >> policy.txt
+
+where policypcr16aaasha256.txt contains the desired value of PCR 16.
+
+Example (PolicyAuthValue):
+
+$ echo 0000016b >> policy.txt
+
 [examples]
 
 Create a self-signed cert using the TPM engine:
@@ -37,8 +54,7 @@ Create a self-signed cert using the TPM engine:
    Note: specifying the parent is optional (and you need to have
    created it in step 0) but if you leave it out, the key will still
    end up parented to the primary storage seed and the TPM will have
-   to re-derive the RSA version of that seed each time you use it
-   (possibly taking 50s or more each time)
+   to re-derive the ECC version of that seed each time you use it
 
    Note: because the RSA private key is sent to the TPM encrypted, the
    tss has to have access to the public part of the parent key (if you
