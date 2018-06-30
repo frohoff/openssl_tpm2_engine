@@ -694,9 +694,14 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (optind >= argc) {
+		printf("Too few arguments: Expected file name as last argument\n");
+		usage(argv[0]);
+	}
+
 	filename = argv[argc - 1];
 
-	if (argc < 2) {
+	if (optind < argc - 1) {
 		printf("Unexpected additional arguments\n");
 		usage(argv[0]);
 	}
