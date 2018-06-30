@@ -34,6 +34,10 @@
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
+/* for use as a TPM_RC return type to indicate this is
+ * not a TPM error, so don't process the rc as one */
+#define NOT_TPM_ERROR (0xffffffff)
+
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
 	{"auth-parent", 1, 0, 'b'},
@@ -123,8 +127,9 @@ int hex2bin(unsigned char *dst, const char *src, size_t count)
 	return 0;
 }
 
-int parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
-		      char *auth, TPMT_HA *digest)
+TPM_RC
+parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
+		  char *auth, TPMT_HA *digest)
 {
 	struct stat st;
 	char *data, *data_ptr;
@@ -133,24 +138,24 @@ int parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 	TSSOPTPOLICY *policy = NULL;
 	INT32 buf_len;
 	TPM_CC code;
-	int rc = 0, fd, policy_auth_value = 0;
+	TPM_RC rc = NOT_TPM_ERROR;
+	int fd, policy_auth_value = 0;
 
 	if (stat(policy_file, &st) == -1) {
 		fprintf(stderr, "File %s cannot be accessed\n", policy_file);
-		return 1;
+		return rc;
 	}
 
 	fd = open(policy_file, O_RDONLY);
 	if (fd < 0) {
 		fprintf(stderr, "File %s cannot be opened\n", policy_file);
-		return 1;
+		return rc;
 	}
 
 	data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE,
 		   MAP_PRIVATE, fd, 0);
 	if (!data) {
 		fprintf(stderr, "mmap() failed\n");
-		rc = 1;
 		goto out;
 	}
 
@@ -158,8 +163,9 @@ int parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 		buf_ptr = buf;
 		buf_len = strlen(data_ptr) / 2;
 		if (buf_len > sizeof(buf)) {
+			rc = NOT_TPM_ERROR;
 			fprintf(stderr, "line too long\n");
-			goto out_err;
+			goto out_munmap;
 		}
 
 		if (!buf_len)
@@ -167,8 +173,9 @@ int parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 
 		rc = hex2bin(buf, data_ptr, buf_len);
 		if (rc < 0) {
+			rc = NOT_TPM_ERROR;
 			fprintf(stderr, "hex2bin() failed\n");
-			goto out_err;
+			goto out_munmap;
 		}
 
 		rc = TSS_Hash_Generate(digest,
@@ -177,13 +184,13 @@ int parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 				       buf_len, buf_ptr, 0, NULL);
 		if (rc) {
 			fprintf(stderr, "TSS_Hash_Generate() failed\n");
-			goto out_err;
+			goto out_munmap;
 		}
 
 		rc = TPM_CC_Unmarshal(&code, &buf_ptr, &buf_len);
 		if (rc) {
 			fprintf(stderr, "TPM_CC_Unmarshal() failed\n");
-			goto out_err;
+			goto out_munmap;
 		}
 
 		if (code == TPM_CC_PolicyAuthValue)
@@ -196,17 +203,15 @@ int parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 	}
 
 	if (auth && !policy_auth_value) {
+		rc = NOT_TPM_ERROR;
 		fprintf(stderr, "PolicyAuthValue command is required\n");
-		goto out_err;
 	}
+
 out_munmap:
 	munmap(data, st.st_size);
 out:
 	close(fd);
 	return rc;
-out_err:
-	rc = EXIT_FAILURE;
-	goto out_munmap;
 }
 
 int
@@ -586,10 +591,10 @@ int main(int argc, char **argv)
 {
 	char *filename, *wrap = NULL, *auth = NULL, *policyFilename = NULL;
 	int option_index, c;
-	const char *reason = "";
+	const char *reason;
 	TSS_CONTEXT *tssContext = NULL;
 	TPM_HANDLE parent = TPM_RH_OWNER, phandle;
-	TPM_RC rc = 0;
+	TPM_RC rc;
 	BYTE pubkey[sizeof(TPM2B_PUBLIC)],privkey[sizeof(TPM2B_PRIVATE)], *buffer;
 	uint16_t pubkey_len, privkey_len;
 	int32_t size, key_size = 0;
@@ -715,7 +720,7 @@ int main(int argc, char **argv)
 	}
 
 	if (rsa == 1 && ecc != TPM_ECC_NONE) {
-		printf("Cannot specify both --rsa and --ecc\n");
+		fprintf(stderr, "Cannot specify both --rsa and --ecc\n");
 		exit(1);
 	} else if (ecc != TPM_ECC_NONE) {
 		rsa = 0;
@@ -756,8 +761,11 @@ int main(int argc, char **argv)
 
 	if (policyFilename) {
 		sk = sk_TSSOPTPOLICY_new_null();
-		if (!sk)
+		if (!sk) {
+			rc = NOT_TPM_ERROR;
+			reason="sk_TSSOPTPOLICY_new_null allocation";
 			goto out_flush;
+		}
 
 		rc = parse_policy_file(policyFilename, sk, auth, &digest);
 		if (rc) {
@@ -777,7 +785,8 @@ int main(int argc, char **argv)
 		OpenSSL_add_all_ciphers();
 		pkey = openssl_read_key(wrap);
 		if (!pkey) {
-			reason = "unable to read key";
+			rc = NOT_TPM_ERROR;
+			reason = "read openssl key";
 			goto out_flush;
 		}
 
@@ -840,8 +849,10 @@ int main(int argc, char **argv)
 		/* use salted parameter encryption to hide the key */
 		rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
 					     TPM_SE_HMAC);
-		if (rc)
+		if (rc) {
+			reason = "get session handle";
 			goto out_flush;
+		}
 
 		rc = TSS_Execute(tssContext,
 				 (RESPONSE_PARAMETERS *)&iout,
@@ -905,8 +916,10 @@ int main(int argc, char **argv)
 		/* use salted parameter encryption to hide the key */
 		rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
 					     TPM_SE_HMAC);
-		if (rc)
+		if (rc) {
+			reason = "get session handle";
 			goto out_flush;
+		}
 
 		rc = TSS_Execute(tssContext,
 				 (RESPONSE_PARAMETERS *)&cout,
@@ -949,7 +962,10 @@ int main(int argc, char **argv)
 	TSS_Delete(tssContext);
 	rmdir(dir);
  out_err:
-	tpm2_error(rc, reason);
+	if (rc == NOT_TPM_ERROR)
+		fprintf(stderr, "%s failed\n", reason);
+	else
+		tpm2_error(rc, reason);
 
 	exit(1);
 }
