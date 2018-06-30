@@ -726,18 +726,6 @@ int main(int argc, char **argv)
 		rsa = 0;
 	}
 
-	if (auth) {
-		if (key) {
-			/* key length already checked */
-			strcpy(auth, key);
-		} else {
-			if (EVP_read_pw_string(auth, 128, "Enter TPM key authority: ", 1)) {
-				fprintf(stderr, "Passwords do not match\n");
-				exit(1);
-			}
-		}
-	}
-
 	dir = tpm2_set_unique_tssdir();
 	rc = tpm2_create(&tssContext, dir);
 	if (rc) {
@@ -771,6 +759,20 @@ int main(int argc, char **argv)
 		if (rc) {
 			reason = "parse_policy_file";
 			goto out_flush;
+		}
+	}
+
+	if (auth) {
+		if (key) {
+			/* key length already checked */
+			strcpy(auth, key);
+		} else {
+			if (EVP_read_pw_string(auth, 128, "Enter TPM key authority: ", 1)) {
+				fprintf(stderr, "Passwords do not match\n");
+				reason = "authorization";
+				rc = NOT_TPM_ERROR;
+				goto out_flush;
+			}
 		}
 	}
 
