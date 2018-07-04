@@ -608,15 +608,6 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	return TPM_RC_SUCCESS;
 }
 
-/*
- * PolicyPCR_In_Unmarshal() cannot be used because pcrs and digestTPM
- * are inverted in the policy command.
- */
-TPM_RC policy_pcr_unmarshal(PolicyPCR_In *target, BYTE **buffer, INT32 *size)
-{
-	return TPML_PCR_SELECTION_Unmarshal(&target->pcrs, buffer, size);
-}
-
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			 int num_commands, struct policy_command *commands)
 {
