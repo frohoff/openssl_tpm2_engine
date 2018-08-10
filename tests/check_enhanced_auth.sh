@@ -11,6 +11,16 @@ if [ ! -e ${tss_pcrreset_cmd} ] || [ ! -e ${tss_pcrextend_cmd} ]; then
 fi
 
 ##
+# check we can use a bogus policy 5 times without clogging up the TPM, so
+# we're properly flushing policy handles
+##
+${bindir}/create_tpm2_key key.tpm -c policies/policy_bogus.txt
+a=0; while [ $a -lt 5 ]; do
+    a=$[$a+1]
+    echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && exit 1
+done
+
+##
 # test is
 # 1. create TPM internal private key with PolicyAuthValue authorization
 # 2. get the corresponding public key from the engine
@@ -19,7 +29,7 @@ fi
 ${bindir}/create_tpm2_key -a -k passw0rd key2.tpm -c policies/policy_authvalue.txt && \
 openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
 echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -passin pass:passw0rd -out tmp.msg && \
-openssl rsautl -verify -in tmp.msg -inkey key2.pub -pubin
+openssl rsautl -verify -in tmp.msg -inkey key2.pub -pubin || exit 1
 
 ##
 # test is
@@ -34,7 +44,7 @@ ${tss_pcrextend_cmd} -ha 16 -ic aaa
 ${bindir}/create_tpm2_key key2.tpm -c policies/policy_pcr.txt && \
 openssl rsa -engine tpm2 -inform engine -in key2.tpm -pubout -out key2.pub && \
 echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -out tmp.msg && \
-openssl rsautl -verify -in tmp.msg -inkey key2.pub -pubin
+openssl rsautl -verify -in tmp.msg -inkey key2.pub -pubin || exit 1
 
 ##
 # test is
@@ -66,7 +76,7 @@ ${tss_pcrextend_cmd} -ha 16 -ic aaa
 ${bindir}/create_tpm2_key -a -k passw0rd key2.tpm -c policies/policy_authvalue_pcr.txt && \
 openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
 echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -passin pass:passw0rd -out tmp.msg && \
-openssl rsautl -verify -in tmp.msg -inkey key2.pub -pubin
+openssl rsautl -verify -in tmp.msg -inkey key2.pub -pubin || exit 1
 
 ##
 # test is

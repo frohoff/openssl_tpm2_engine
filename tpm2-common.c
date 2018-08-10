@@ -634,12 +634,13 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 		default:
 			fprintf(stderr, "Unsupported policy command %d\n",
 				commands[i].code);
-			return TPM_RC_FAILURE;
+			rc = TPM_RC_FAILURE;
+			goto out_flush;
 		}
 
 		if (rc) {
 			tpm2_error(rc, "unmarshal");
-			return rc;
+			goto out_flush;
 		}
 
 		rc = TSS_Execute(tssContext,
@@ -650,11 +651,15 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 				TPM_RH_NULL, NULL, 0);
 		if (rc) {
 			tpm2_error(rc, "policy command");
-			return rc;
+			goto out_flush;
 		}
 	}
 
 	return TPM_RC_SUCCESS;
+
+ out_flush:
+	tpm2_flush_handle(tssContext, handle);
+	return rc;
 }
 
 /*
