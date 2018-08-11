@@ -616,7 +616,9 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 	TPM_RC rc = 0;
 	COMMAND_PARAMETERS in;
 	int i;
+	char reason[256];
 
+	reason[0] = '\0';
 	((PolicyPCR_In *)&in)->policySession = handle;
 
 	for (i = 0; i < num_commands; i++) {
@@ -631,6 +633,50 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			break;
 		case TPM_CC_PolicyAuthValue:
 			break;
+		case TPM_CC_PolicyCounterTimer: {
+			PolicyCounterTimer_In *pctin = &in.PolicyCounterTimer;
+			BYTE *p_buffer;
+			INT32 p_size;
+			int i, c;
+			const char *const operand[] = {
+				[TPM_EO_EQ] = "==",
+				[TPM_EO_NEQ] = "!=",
+				[TPM_EO_SIGNED_GT] = ">(s)",
+				[TPM_EO_UNSIGNED_GT] = ">",
+				[TPM_EO_SIGNED_LT] = "<(s)",
+				[TPM_EO_UNSIGNED_LT] = "<",
+				[TPM_EO_SIGNED_GE] = ">=(s)",
+				[TPM_EO_UNSIGNED_GE] = ">=",
+				[TPM_EO_SIGNED_LE] = "<=(s)",
+				[TPM_EO_UNSIGNED_LE] = "<=",
+				[TPM_EO_BITSET] = "bitset",
+				[TPM_EO_BITCLEAR] = "bitclear",
+			};
+
+			/* last UINT16 is the operand */
+			p_buffer = policy + size - 2;
+			p_size = 2;
+			TPM_EO_Unmarshal(&pctin->operation, &p_buffer,
+					 &p_size);
+			/* second to last UINT16 is the offset */
+			p_buffer = policy + size - 4;
+			p_size = 2;
+			UINT16_Unmarshal(&pctin->offset, &p_buffer, &p_size);
+
+			/* and the rest is the OperandB */
+			pctin->operandB.b.size = size - 4;
+			memcpy(pctin->operandB.b.buffer, policy, size - 4);
+
+			c = sprintf(reason,
+				    "Counter Timer at offset %d is not %s ",
+				    pctin->offset, operand[pctin->operation]);
+			for (i = 0; i < size - 4; i++)
+				c += sprintf(&reason[c], "%02x", policy[i]);
+
+			reason[c] = '\0';
+
+			break;
+		}
 		default:
 			fprintf(stderr, "Unsupported policy command %d\n",
 				commands[i].code);
@@ -650,7 +696,10 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 				commands[i].code,
 				TPM_RH_NULL, NULL, 0);
 		if (rc) {
-			tpm2_error(rc, "policy command");
+			if (rc == TPM_RC_POLICY && reason[0])
+				fprintf(stderr, "Policy Failure: %s\n", reason);
+			else
+				tpm2_error(rc, "policy command");
 			goto out_flush;
 		}
 	}

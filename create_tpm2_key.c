@@ -160,6 +160,10 @@ parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 	}
 
 	while ((data_ptr = strsep(&data, "\n"))) {
+		TPMT_HA hash_digest;
+		unsigned char *hash = (unsigned char *)hash_digest.digest.tssmax;
+		INT32 hash_len;
+
 		buf_ptr = buf;
 		buf_len = strlen(data_ptr) / 2;
 		if (buf_len > sizeof(buf)) {
@@ -178,18 +182,31 @@ parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 			goto out_munmap;
 		}
 
-		rc = TSS_Hash_Generate(digest,
-				       TSS_GetDigestSize(digest->hashAlg),
-				       (uint8_t *)&digest->digest,
-				       buf_len, buf_ptr, 0, NULL);
-		if (rc) {
-			fprintf(stderr, "TSS_Hash_Generate() failed\n");
-			goto out_munmap;
-		}
-
 		rc = TPM_CC_Unmarshal(&code, &buf_ptr, &buf_len);
 		if (rc) {
 			fprintf(stderr, "TPM_CC_Unmarshal() failed\n");
+			goto out_munmap;
+		}
+
+		if (code == TPM_CC_PolicyCounterTimer) {
+			/* for a countertimer, the policy is a hash of the hash */
+			hash_digest.hashAlg = digest->hashAlg;
+			hash_len = TSS_GetDigestSize(digest->hashAlg);
+			TSS_Hash_Generate(&hash_digest, buf_len, buf_ptr, 0, NULL);
+			hash = hash_digest.digest.tssmax;
+		} else {
+			hash = buf_ptr;
+			hash_len = buf_len;
+		}
+
+		rc = TSS_Hash_Generate(digest,
+				       TSS_GetDigestSize(digest->hashAlg),
+				       (uint8_t *)&digest->digest,
+				       /* the command code */
+				       4, buf_ptr - 4,
+				       hash_len, hash, 0, NULL);
+		if (rc) {
+			fprintf(stderr, "TSS_Hash_Generate() failed\n");
 			goto out_munmap;
 		}
 

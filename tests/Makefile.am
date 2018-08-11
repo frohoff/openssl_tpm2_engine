@@ -15,6 +15,7 @@ TESTS = fail_connect.sh \
 	da_check.sh \
 	test_nv_key.sh \
 	check_enhanced_auth.sh \
+	check_counter_timer.sh \
 	stop_sw_tpm.sh
 
 AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
