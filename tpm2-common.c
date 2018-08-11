@@ -613,24 +613,33 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 {
 	INT32 size;
 	BYTE *policy;
-	TPM_RC rc = 0;
+	TPM_RC rc = 0, reason_rc = 0;
 	COMMAND_PARAMETERS in;
 	int i;
 	char reason[256];
 
 	reason[0] = '\0';
-	((PolicyPCR_In *)&in)->policySession = handle;
+	/* pick a random policy type: they all have the handle first */
+	in.PolicyPCR.policySession = handle;
 
 	for (i = 0; i < num_commands; i++) {
 		size = commands[i].size;
 		policy = commands[i].policy;
 
 		switch (commands[i].code) {
-		case TPM_CC_PolicyPCR:
+		case TPM_CC_PolicyPCR: {
+			PolicyPCR_In *ppcrin = &in.PolicyPCR;
+
 			rc = TPML_PCR_SELECTION_Unmarshal(
-				&((PolicyPCR_In *)&in)->pcrs, &policy, &size);
-			((PolicyPCR_In *)&in)->pcrDigest.b.size = 0;
+				&ppcrin->pcrs, &policy, &size);
+			ppcrin->pcrDigest.b.size = size;
+			memcpy(ppcrin->pcrDigest.b.buffer,
+			       policy, size);
+			sprintf(reason, "PCR Mismatch");
+			reason_rc = TPM_RC_VALUE;
+
 			break;
+		}
 		case TPM_CC_PolicyAuthValue:
 			break;
 		case TPM_CC_PolicyCounterTimer: {
@@ -674,6 +683,7 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 				c += sprintf(&reason[c], "%02x", policy[i]);
 
 			reason[c] = '\0';
+			reason_rc = TPM_RC_POLICY;
 
 			break;
 		}
@@ -691,12 +701,22 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 
 		rc = TSS_Execute(tssContext,
 				NULL,
-				(COMMAND_PARAMETERS *)&in,
+				&in,
 				NULL,
 				commands[i].code,
 				TPM_RH_NULL, NULL, 0);
 		if (rc) {
-			if (rc == TPM_RC_POLICY && reason[0])
+			TPM_RC check_rc;
+
+			/* strip additional parameter or session information */
+			if ((rc & 0x180) == RC_VER1)
+				check_rc = rc & 0x1ff;
+			else if (rc & RC_FMT1)
+				check_rc = rc & 0xbf;
+			else
+				check_rc = rc;
+
+			if (check_rc == reason_rc && reason[0])
 				fprintf(stderr, "Policy Failure: %s\n", reason);
 			else
 				tpm2_error(rc, "policy command");
