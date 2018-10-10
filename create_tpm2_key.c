@@ -679,7 +679,7 @@ int main(int argc, char **argv)
 			case 'v':
 				fprintf(stdout, "%s " VERSION "\n"
 					"Copyright 2017 by James Bottomley\n"
-					"License GPLv2: GNU GPL version 2\n"
+					"License LGPL-2.1-only\n"
 					"Written by James Bottomley <James.Bottomley@HansenPartnership.com>\n",
 					argv[0]);
 				exit(0);
