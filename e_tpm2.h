@@ -8,6 +8,7 @@
 
 /* structure pointed to by the RSA object's app_data pointer */
 struct app_data {
+	int version;
 	TPM_HANDLE parent;
 	/* if key is in NV memory */
 	TPM_HANDLE key;

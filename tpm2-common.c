@@ -230,7 +230,7 @@ void tpm2_error(TPM_RC rc, const char *reason)
 }
 
 
-TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy)
+TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy, int version)
 {
 	TPM_RC rc;
 	CreatePrimary_In in;
@@ -262,6 +262,11 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 		TPMA_OBJECT_USERWITHAUTH |
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_RESTRICTED;
+	if (version)
+		in.inPublic.publicArea.objectAttributes.val |=
+			TPMA_OBJECT_FIXEDPARENT |
+			TPMA_OBJECT_FIXEDTPM;
+
 	in.inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
 	in.inPublic.publicArea.parameters.eccDetail.symmetric.keyBits.aes = 128;
 	in.inPublic.publicArea.parameters.eccDetail.symmetric.mode.aes = TPM_ALG_CFB;

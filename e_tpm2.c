@@ -541,7 +541,7 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 	if ((app_data->parent & 0xff000000) == 0x81000000) {
 		in.parentHandle = app_data->parent;
 	} else {
-		rc = tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL, app_data->parent);
+		rc = tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL, app_data->parent, app_data->version);
 		if (rc)
 			goto out;
 	}

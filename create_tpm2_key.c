@@ -751,7 +751,7 @@ int main(int argc, char **argv)
 	}
 
 	if ((parent & 0xff000000) == 0x40000000) {
-		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent);
+		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, 0);
 		if (rc) {
 			reason = "tpm2_load_srk";
 			goto out_delete;
