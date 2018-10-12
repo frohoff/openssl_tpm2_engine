@@ -256,7 +256,7 @@ openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 	ASN1_STRING_set(tssl.privkey, privkey, privkey_len);
 	tssl.policy = sk;
 
-	PEM_write_bio_TSSLOADABLE(outb, &tssl);
+	PEM_write_bio_TSSPRIVKEY(outb, &tssl);
 	BIO_free(outb);
 	return 0;
 }
@@ -751,7 +751,7 @@ int main(int argc, char **argv)
 	}
 
 	if ((parent & 0xff000000) == 0x40000000) {
-		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, 0);
+		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, 1);
 		if (rc) {
 			reason = "tpm2_load_srk";
 			goto out_delete;

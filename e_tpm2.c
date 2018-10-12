@@ -322,7 +322,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	INT32 size;
 	struct app_data *app_data;
 	char oid[128];
-	int empty_auth;
+	int empty_auth, version = 0;
 	const int nvkey_len = strlen(nvprefix);
 
 	if (!key_id && !bio) {
@@ -351,7 +351,13 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		return 0;
 	}
 
-	tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
+	tssl = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
+	if (tssl) {
+		version = 1;
+	} else {
+		BIO_seek(bf, 0);
+		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
+	}
 
 	if (!bio)
 		BIO_free(bf);
@@ -393,6 +399,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	}
 	memset(app_data, 0, sizeof(*app_data));
 
+	app_data->version = version;
 	app_data->dir = tpm2_set_unique_tssdir();
 
 	if (tssl->parent)
