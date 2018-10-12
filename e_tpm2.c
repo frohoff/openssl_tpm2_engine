@@ -271,13 +271,13 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 }
 
 static int tpm2_engine_load_key_policy(struct app_data *app_data,
-				       TSSLOADABLE *tssl)
+				       STACK_OF(TSSOPTPOLICY) *st_policy)
 {
 	struct policy_command *command;
 	TSSOPTPOLICY *policy;
 	int i, commands_len;
 
-	app_data->num_commands = sk_TSSOPTPOLICY_num(tssl->policy);
+	app_data->num_commands = sk_TSSOPTPOLICY_num(st_policy);
 	if (app_data->num_commands <= 0)
 		return 1;
 
@@ -287,7 +287,7 @@ static int tpm2_engine_load_key_policy(struct app_data *app_data,
 		return 0;
 
 	for (i = 0; i < app_data->num_commands; i++) {
-		policy = sk_TSSOPTPOLICY_value(tssl->policy, i);
+		policy = sk_TSSOPTPOLICY_value(st_policy, i);
 		if (!policy)
 			return 0;
 
@@ -317,13 +317,19 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	EVP_PKEY *pkey;
 	TPM2B_PUBLIC p;
 	BIO *bf;
-	TSSLOADABLE *tssl;
+	TSSLOADABLE *tssl = NULL;
+	TSSPRIVKEY *tpk = NULL;
 	BYTE *buffer;
 	INT32 size;
 	struct app_data *app_data;
 	char oid[128];
 	int empty_auth, version = 0;
 	const int nvkey_len = strlen(nvprefix);
+	ASN1_OBJECT *type;
+	ASN1_INTEGER *parent;
+	ASN1_OCTET_STRING *pubkey;
+	STACK_OF(TSSOPTPOLICY) *policy;
+	ASN1_OCTET_STRING *privkey;
 
 	if (!key_id && !bio) {
 		fprintf(stderr, "key_id or bio is NULL\n");
@@ -351,18 +357,32 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		return 0;
 	}
 
-	tssl = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
-	if (tssl) {
+	tpk = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
+	if (tpk) {
 		version = 1;
+		type = tpk->type;
+		empty_auth = tpk->emptyAuth;
+		parent = tpk->parent;
+		pubkey = tpk->pubkey;
+		privkey = tpk->privkey;
+		policy = tpk->policy;
 	} else {
 		BIO_seek(bf, 0);
 		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
+		if (tssl) {
+			type = tssl->type;
+			empty_auth = tssl->emptyAuth;
+			parent = tssl->parent;
+			pubkey = tssl->pubkey;
+			privkey = tssl->privkey;
+			policy = tssl->policy;
+		}
 	}
 
 	if (!bio)
 		BIO_free(bf);
 
-	if (!tssl) {
+	if (!tssl && !tpk) {
 		if (ppkey)
 			fprintf(stderr, "Failed to parse file %s\n", key_id);
 		return 0;
@@ -370,10 +390,11 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 
 	if (!ppkey) {
 		TSSLOADABLE_free(tssl);
+		TSSPRIVKEY_free(tpk);
 		return 1;
 	}
 
-	if (OBJ_obj2txt(oid, sizeof(oid), tssl->type, 1) == 0) {
+	if (OBJ_obj2txt(oid, sizeof(oid), type, 1) == 0) {
 		fprintf(stderr, "Failed to parse object type\n");
 		goto err;
 	}
@@ -402,25 +423,23 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	app_data->version = version;
 	app_data->dir = tpm2_set_unique_tssdir();
 
-	if (tssl->parent)
-		app_data->parent = ASN1_INTEGER_get(tssl->parent);
+	if (parent)
+		app_data->parent = ASN1_INTEGER_get(parent);
 	else
 		/* older keys have absent parent */
 		app_data->parent = TPM_RH_OWNER;
 
-	empty_auth = tssl->emptyAuth;
-
-	app_data->priv = OPENSSL_malloc(tssl->privkey->length);
+	app_data->priv = OPENSSL_malloc(privkey->length);
 	if (!app_data->priv)
 		goto err_free;
-	app_data->priv_len = tssl->privkey->length;
-	memcpy(app_data->priv, tssl->privkey->data, app_data->priv_len);
+	app_data->priv_len = privkey->length;
+	memcpy(app_data->priv, privkey->data, app_data->priv_len);
 
-	app_data->pub = OPENSSL_malloc(tssl->pubkey->length);
+	app_data->pub = OPENSSL_malloc(pubkey->length);
 	if (!app_data->pub)
 		goto err_free;
-	app_data->pub_len = tssl->pubkey->length;
-	memcpy(app_data->pub, tssl->pubkey->data, app_data->pub_len);
+	app_data->pub_len = pubkey->length;
+	memcpy(app_data->pub, pubkey->data, app_data->pub_len);
 	buffer = app_data->pub;
 	size = app_data->pub_len;
 	TPM2B_PUBLIC_Unmarshal(&p, &buffer, &size, FALSE);
@@ -440,10 +459,11 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	if (!(p.publicArea.objectAttributes.val & TPMA_OBJECT_USERWITHAUTH))
 		app_data->req_policy_session = 1;
 
-	if (!tpm2_engine_load_key_policy(app_data, tssl))
+	if (!tpm2_engine_load_key_policy(app_data, policy))
 		goto err_free_key;
 
 	TSSLOADABLE_free(tssl);
+	TSSPRIVKEY_free(tpk);
 
 	tpm2_bind_key_to_engine(pkey, app_data);
 

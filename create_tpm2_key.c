@@ -236,7 +236,7 @@ openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		      BYTE *privkey, int privkey_len, int empty_auth,
 		      TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk)
 {
-	TSSLOADABLE tssl;
+	TSSPRIVKEY tssl;
 	BIO *outb;
 
 	/* clear structure so as not to have to set optional parameters */
