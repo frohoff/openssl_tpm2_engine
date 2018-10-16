@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2017 James.Bottomley@HansenPartnership.com
  *
- * GPLv2
+ * SPDX-License-Identifier: LGPL-2.1-only
  *
  */
 

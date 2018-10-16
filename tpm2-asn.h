@@ -1,6 +1,10 @@
 /* Copyright (C) 2016 James Bottomley <James.Bottomley@HansenPartnership.com>
  *
- * GPLv2
+ * SPDX-License-Identifier: LGPL-2.1-only
+ *
+ * Note: The ASN.1 defines constitute an interface specification for
+ * the openssl key format which may be copied by other implementations
+ * as fair use regardless of licence
  */
 #ifndef _TPM2_ASN_H
 #define _TPM2_ASN_H
