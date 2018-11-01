@@ -49,12 +49,24 @@ DEFINE_STACK_OF(TSSOPTPOLICY);
  * contains things like the policy but which is cryptographically tied
  * to the private key.
  *
- * TPMKey ::= SEQUENCE {
+ * OldTPMKey ::= SEQUENCE {
  *	type		OBJECT IDENTIFIER
  *	emptyAuth	[0] EXPLICIT BOOLEAN OPTIONAL
  *	parent		[1] EXPLICIT INTEGER OPTIONAL
  *	pubkey		[2] EXPLICIT OCTET STRING OPTIONAL
  *	policy		[3] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL
+ *	privkey		OCTET STRING
+ * }
+ *
+ * This is the newer form of the key file.  It no-longer covers TPM
+ * 1.2 keys and thus the parent and pubkey are no-longer optional
+ *
+ * TPMKey ::= SEQUENCE {
+ *	type		OBJECT IDENTIFIER
+ *	emptyAuth	[0] EXPLICIT BOOLEAN OPTIONAL
+ *	policy		[1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL
+ *	parent		INTEGER
+ *	pubkey		OCTET STRING
  *	privkey		OCTET STRING
  * }
  */
@@ -81,10 +93,17 @@ typedef struct {
  *  unoccupied child (10) for keytype file and two values:
  *    1 : Key that is directly loadable
  *    2 : Key that must first be imported then loaded
+ *
+ * the TCG actually gave us some OIDs which turn out to be different
+ * from the ones we chose, so keep OID_Oldloadablekey for backwards
+ * compatibility, but add the new loadable and importable key types on
+ * the new OIDs
  */
-#define OID_12Key		"2.23.133.10.1"
-#define OID_loadableKey		"2.23.133.10.2"
-#define OID_importableKey	"2.23.133.10.3"
+#define OID_OldloadableKey		"2.23.133.10.2"
+
+#define OID_loadableKey			"2.23.133.10.1.3"
+#define OID_importableKey		"2.23.133.10.1.4"
+
 
 ASN1_SEQUENCE(TSSLOADABLE) = {
 	ASN1_SIMPLE(TSSLOADABLE, type, ASN1_OBJECT),

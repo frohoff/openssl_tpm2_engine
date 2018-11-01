@@ -400,10 +400,15 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	}
 
 	if (strcmp(OID_loadableKey, oid) == 0) {
-		;
-	} else if (strcmp(OID_12Key, oid) == 0) {
-		fprintf(stderr, "TPM1.2 key is not importable by TPM2.0\n");
-		goto err;
+		if (version != 1) {
+			fprintf(stderr, "New type found in old format key\n");
+			goto err;
+		}
+	} else if (strcmp(OID_OldloadableKey, oid) == 0) {
+		if (version != 0) {
+			fprintf(stderr, "Old type found in new format key\n");
+			goto err;
+		}
 	} else if (strcmp(OID_importableKey, oid) == 0) {
 		fprintf(stderr, "Importable keys currently unsupported\n");
 		goto err;
