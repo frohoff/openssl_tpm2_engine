@@ -7,6 +7,7 @@ TESTS = fail_connect.sh \
 	check_auth.sh \
 	wrap_tpm_key.sh \
 	check_wrap_auth.sh \
+	check_old_keys.sh \
 	create_ecc.sh \
 	wrap_ecc.sh \
 	wrap_generic_ecc.sh \

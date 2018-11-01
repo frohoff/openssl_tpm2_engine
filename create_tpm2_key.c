@@ -38,6 +38,8 @@
  * not a TPM error, so don't process the rc as one */
 #define NOT_TPM_ERROR (0xffffffff)
 
+#define OPT_DEPRECATED 0x1ff
+
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
 	{"auth-parent", 1, 0, 'b'},
@@ -53,6 +55,12 @@ static struct option long_options[] = {
 	{"list-curves", 0, 0, 'l'},
 	{"da", 0, 0, 'd'},
 	{"key-policy", 1, 0, 'c'},
+	/*
+	 * The option --deprecated allows us to create old format keys
+	 * for the purposes of testing.  It should never be used in
+	 * the field so is an undocumented option
+	 */
+	{"deprecated", 0, 0, OPT_DEPRECATED},
 	{0, 0, 0, 0}
 };
 
@@ -234,29 +242,49 @@ out:
 int
 openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		      BYTE *privkey, int privkey_len, int empty_auth,
-		      TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk)
+		      TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk,
+		      int version)
 {
-	TSSPRIVKEY tssl;
+	union {
+		TSSLOADABLE tssl;
+		TSSPRIVKEY tpk;
+	} k;
 	BIO *outb;
 
 	/* clear structure so as not to have to set optional parameters */
-	memset(&tssl, 0, sizeof(tssl));
+	memset(&k, 0, sizeof(k));
 	if ((outb = BIO_new_file(file, "w")) == NULL) {
                 fprintf(stderr, "Error opening file for write: %s\n", file);
 		return 1;
 	}
-	tssl.type = OBJ_txt2obj(OID_loadableKey, 1);
-	tssl.emptyAuth = empty_auth;
-	tssl.parent = ASN1_INTEGER_new();
-	ASN1_INTEGER_set(tssl.parent, parent);
+	if (version == 0) {
+		k.tssl.type = OBJ_txt2obj(OID_OldloadableKey, 1);
+		k.tssl.emptyAuth = empty_auth;
+		k.tssl.parent = ASN1_INTEGER_new();
+		ASN1_INTEGER_set(k.tssl.parent, parent);
 
-	tssl.pubkey = ASN1_OCTET_STRING_new();
-	ASN1_STRING_set(tssl.pubkey, pubkey, pubkey_len);
-	tssl.privkey = ASN1_OCTET_STRING_new();
-	ASN1_STRING_set(tssl.privkey, privkey, privkey_len);
-	tssl.policy = sk;
+		k.tssl.pubkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tssl.pubkey, pubkey, pubkey_len);
+		k.tssl.privkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tssl.privkey, privkey, privkey_len);
+		k.tssl.policy = sk;
 
-	PEM_write_bio_TSSPRIVKEY(outb, &tssl);
+		PEM_write_bio_TSSLOADABLE(outb, &k.tssl);
+	} else {
+		k.tpk.type = OBJ_txt2obj(OID_loadableKey, 1);
+		k.tpk.emptyAuth = empty_auth;
+		k.tpk.parent = ASN1_INTEGER_new();
+		ASN1_INTEGER_set(k.tpk.parent, parent);
+
+		k.tpk.pubkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tpk.pubkey, pubkey, pubkey_len);
+		k.tpk.privkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tpk.privkey, privkey, privkey_len);
+		k.tpk.policy = sk;
+
+		PEM_write_bio_TSSPRIVKEY(outb, &k.tpk);
+	}
+
 	BIO_free(outb);
 	return 0;
 }
@@ -624,7 +652,7 @@ int main(int argc, char **argv)
 	TPM_HANDLE authHandle;
 	const char *dir;
 	STACK_OF(TSSOPTPOLICY) *sk = NULL;
-
+	int version = 1;
 	uint32_t sizeInBytes;
 	TPMT_HA digest;
 
@@ -709,6 +737,9 @@ int main(int argc, char **argv)
 			case 'c':
 				policyFilename = optarg;
 				break;
+			case OPT_DEPRECATED:
+				version = 0;
+				break;
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
@@ -751,7 +782,7 @@ int main(int argc, char **argv)
 	}
 
 	if ((parent & 0xff000000) == 0x40000000) {
-		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, 1);
+		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, version);
 		if (rc) {
 			reason = "tpm2_load_srk";
 			goto out_delete;
@@ -967,7 +998,8 @@ int main(int argc, char **argv)
 	size = sizeof(privkey);
 	TSS_TPM2B_PRIVATE_Marshal(priv, &privkey_len, &buffer, &size);
 	openssl_write_tpmfile(filename, pubkey, pubkey_len,
-			      privkey, privkey_len, auth == NULL, parent, sk);
+			      privkey, privkey_len, auth == NULL, parent, sk,
+			      version);
 	free_policy(sk);
 	TSS_Delete(tssContext);
 	tpm2_rm_tssdir(dir, 0);
