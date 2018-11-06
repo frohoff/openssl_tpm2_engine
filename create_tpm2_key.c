@@ -65,7 +65,6 @@ static struct option long_options[] = {
 };
 
 static TPM_ALG_ID name_alg = TPM_ALG_SHA256;
-static int name_alg_size = SHA256_DIGEST_SIZE;
 
 void
 usage(char *argv0)
@@ -676,16 +675,13 @@ int main(int argc, char **argv)
 			case 'n':
 				if (!strcasecmp("sha1", optarg)) {
 					name_alg = TPM_ALG_SHA1;
-					name_alg_size = SHA1_DIGEST_SIZE;
-				} else if (strcasecmp("sha256", optarg)) {
+				} else if (!strcasecmp("sha256", optarg)) {
 					/* default, do nothing */
-				} else if (strcasecmp("sha384", optarg)) {
+				} else if (!strcasecmp("sha384", optarg)) {
 					name_alg = TPM_ALG_SHA384;
-					name_alg_size = SHA384_DIGEST_SIZE;
 #ifdef TPM_ALG_SHA512
-				} else if (strcasecmp("sha512", optarg)) {
+				} else if (!strcasecmp("sha512", optarg)) {
 					name_alg = TPM_ALG_SHA512;
-					name_alg_size = SHA512_DIGEST_SIZE;
 #endif
 				} else {
 					usage(argv[0]);
