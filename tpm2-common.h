@@ -16,9 +16,11 @@ void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h);
 EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub);
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK);
 TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
-			       TPM_HANDLE salt_key, TPM_SE sessionType);
+			       TPM_HANDLE salt_key, TPM_SE sessionType,
+			       TPM_ALG_ID name_alg);
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
-			 int num_commands, struct policy_command *commands);
+			 int num_commands, struct policy_command *commands,
+			 TPM_ALG_ID name_alg);
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth);
 TPM_RC tpm2_SensitiveToDuplicate(TPMT_SENSITIVE *s,

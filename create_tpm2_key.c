@@ -791,7 +791,7 @@ int main(int argc, char **argv)
 		phandle = parent;
 	}
 
-	digest.hashAlg = TPM_ALG_SHA256;
+	digest.hashAlg = name_alg;
 	sizeInBytes = TSS_GetDigestSize(digest.hashAlg);
 	memset((uint8_t *)&digest.digest, 0, sizeInBytes);
 
@@ -896,7 +896,7 @@ int main(int argc, char **argv)
 
 		/* use salted parameter encryption to hide the key */
 		rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
-					     TPM_SE_HMAC);
+					     TPM_SE_HMAC, name_alg);
 		if (rc) {
 			reason = "get session handle";
 			goto out_flush;
@@ -960,7 +960,7 @@ int main(int argc, char **argv)
 
 		/* use salted parameter encryption to hide the key */
 		rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
-					     TPM_SE_HMAC);
+					     TPM_SE_HMAC, name_alg);
 		if (rc) {
 			reason = "get session handle";
 			goto out_flush;

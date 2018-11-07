@@ -104,7 +104,8 @@ static int tpm2_rsa_pub_enc(int flen,
 static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
 					 char **auth, TPM_SE *sessionType,
 					 int *num_commands,
-					 struct policy_command **commands)
+					 struct policy_command **commands,
+					 TPM_ALG_ID *nameAlg)
 {
 	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
 
@@ -116,6 +117,7 @@ static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
 		       TPM_SE_POLICY : TPM_SE_HMAC;
 	*commands = app_data->commands;
 	*num_commands = app_data->num_commands;
+	*nameAlg = app_data->name_alg;
 
 	return tpm2_load_key(tssContext, app_data);
 }
@@ -165,10 +167,11 @@ static int tpm2_rsa_priv_dec(int flen,
 	TPM_SE sessionType;
 	int num_commands;
 	struct policy_command *commands;
+	TPM_ALG_ID nameAlg;
 
 	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
 					      &sessionType, &num_commands,
-					      &commands);
+					      &commands, &nameAlg);
 
 	if (in.keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
@@ -187,13 +190,14 @@ static int tpm2_rsa_priv_dec(int flen,
 	memcpy(in.cipherText.t.buffer, from, flen);
 	in.label.t.size = 0;
 
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
+				     nameAlg);
 	if (rc)
 		goto out;
 
 	if (sessionType == TPM_SE_POLICY) {
 		rc = tpm2_init_session(tssContext, authHandle,
-				       num_commands, commands);
+				       num_commands, commands, nameAlg);
 		if (rc)
 			goto out;
 	}
@@ -237,6 +241,7 @@ static int tpm2_rsa_priv_enc(int flen,
 	TPM_SE sessionType;
 	int num_commands;
 	struct policy_command *commands;
+	TPM_ALG_ID nameAlg;
 
 	if (padding != RSA_PKCS1_PADDING) {
 		fprintf(stderr, "Non PKCS1 padding asked for\n");
@@ -245,7 +250,7 @@ static int tpm2_rsa_priv_enc(int flen,
 
 	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
 					      &sessionType, &num_commands,
-					      &commands);
+					      &commands, &nameAlg);
 
 	if (in.keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
@@ -254,13 +259,14 @@ static int tpm2_rsa_priv_enc(int flen,
 	}
 
 	rv = -1;
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType);
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
+				     nameAlg);
 	if (rc)
 		goto out;
 
 	if (sessionType == TPM_SE_POLICY) {
 		rc = tpm2_init_session(tssContext, authHandle,
-				       num_commands, commands);
+				       num_commands, commands, nameAlg);
 		if (rc)
 			goto out;
 	}

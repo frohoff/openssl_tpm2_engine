@@ -218,6 +218,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	rc = tpm2_readpublic(tssContext, key, &p);
 	if (rc)
 		goto err_del;
+	app_data->name_alg = p.nameAlg;
 	pkey = tpm2_to_openssl_public(&p);
 	if (!pkey) {
 		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
@@ -448,6 +449,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	buffer = app_data->pub;
 	size = app_data->pub_len;
 	TPM2B_PUBLIC_Unmarshal(&p, &buffer, &size, FALSE);
+	app_data->name_alg = p.publicArea.nameAlg;
 	/* create the new objects to return */
 	pkey = tpm2_to_openssl_public(&p.publicArea);
 	if (!pkey) {
@@ -578,7 +580,7 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data)
 			goto out;
 	}
 	rc = tpm2_get_session_handle(tssContext, &session, in.parentHandle,
-				     TPM_SE_HMAC);
+				     TPM_SE_HMAC, app_data->name_alg);
 	if (rc)
 		goto out_flush_srk;
 	rc = TSS_Execute(tssContext,

@@ -570,7 +570,8 @@ TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 }
 
 TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
-			       TPM_HANDLE salt_key, TPM_SE sessionType)
+			       TPM_HANDLE salt_key, TPM_SE sessionType,
+			       TPM_ALG_ID name_alg)
 {
 	TPM_RC rc;
 	StartAuthSession_In in;
@@ -581,7 +582,7 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	memset(&extra, 0 , sizeof(extra));
 	in.bind = TPM_RH_NULL;
 	in.sessionType = sessionType;
-	in.authHash = TPM_ALG_SHA256;
+	in.authHash = name_alg;
 	in.tpmKey = TPM_RH_NULL;
 	in.symmetric.algorithm = TPM_ALG_AES;
 	in.symmetric.keyBits.aes = 128;
@@ -614,7 +615,8 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 }
 
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
-			 int num_commands, struct policy_command *commands)
+			 int num_commands, struct policy_command *commands,
+			 TPM_ALG_ID name_alg)
 {
 	INT32 size;
 	BYTE *policy;
@@ -622,6 +624,7 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 	COMMAND_PARAMETERS in;
 	int i;
 	char reason[256];
+	int name_alg_size = TSS_GetDigestSize(name_alg);
 
 	reason[0] = '\0';
 	/* pick a random policy type: they all have the handle first */
@@ -637,9 +640,9 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 
 			rc = TPML_PCR_SELECTION_Unmarshal(
 				&ppcrin->pcrs, &policy, &size);
-			ppcrin->pcrDigest.b.size = size;
+			ppcrin->pcrDigest.b.size = name_alg_size;
 			memcpy(ppcrin->pcrDigest.b.buffer,
-			       policy, size);
+			       policy, name_alg_size);
 			sprintf(reason, "PCR Mismatch");
 			reason_rc = TPM_RC_VALUE;
 

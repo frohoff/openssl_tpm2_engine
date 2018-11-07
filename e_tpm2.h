@@ -21,6 +21,7 @@ struct app_data {
 	const char *dir;
 	int req_policy_session;
 	int num_commands;
+	unsigned int name_alg;
 	struct policy_command *commands;
 };
 
