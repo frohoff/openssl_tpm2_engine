@@ -642,6 +642,10 @@ int main(int argc, char **argv)
 	BYTE pubkey[sizeof(TPM2B_PUBLIC)],privkey[sizeof(TPM2B_PRIVATE)], *buffer;
 	uint16_t pubkey_len, privkey_len;
 	int32_t size, key_size = 0;
+	Import_In iin;
+	Import_Out iout;
+	Create_In cin;
+	Create_Out cout;
 	TPM2B_PUBLIC *pub;
 	TPM2B_PRIVATE *priv;
 	char *key = NULL, *parent_auth = NULL;
@@ -821,8 +825,6 @@ int main(int argc, char **argv)
 	}
 
 	if (wrap) {
-		Import_In iin;
-		Import_Out iout;
 		EVP_PKEY *pkey;
 		TPMT_SENSITIVE s;
 		TPM2B_NAME name;
@@ -917,9 +919,6 @@ int main(int argc, char **argv)
 		priv = &iout.outPrivate;
  	} else {
 		/* create a TPM resident key */
-		Create_In cin;
-		Create_Out cout;
-
 		if (rsa) {
 			tpm2_public_template_rsa(&cin.inPublic.publicArea);
 			cin.inPublic.publicArea.parameters.rsaDetail.keyBits = key_size;
