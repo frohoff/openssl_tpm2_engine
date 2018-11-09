@@ -236,25 +236,10 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	TPM_SE sessionType;
 	char *auth;
 	size_t len;
-	const EC_GROUP *group;
-	BN_CTX *ctx;
-	unsigned char point[MAX_ECC_KEY_BYTES*2 + 1];
 	int num_commands;
 	struct policy_command *commands;
 	TPM_ALG_ID nameAlg;
 	int ret;
-
-	group = EC_KEY_get0_group(eck);
-	ctx = BN_CTX_new();
-	if (!ctx)
-		return 0;
-	BN_CTX_start(ctx);
-	len = EC_POINT_point2oct(group, pt, POINT_CONVERSION_UNCOMPRESSED,
-				 point, sizeof(point), ctx);
-	BN_CTX_free(ctx);
-
-	len--;
-	len >>= 1;
 
 	in.keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
 					      &sessionType, &num_commands,
@@ -263,10 +248,9 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
 		return 0;
 	}
-	memcpy(in.inPoint.point.x.t.buffer, point + 1, len);
-	in.inPoint.point.x.t.size = len;
-	memcpy(in.inPoint.point.y.t.buffer, point + 1 + len, len);
-	in.inPoint.point.y.t.size = len;
+	len = tpm2_get_public_point(&in.inPoint, EC_KEY_get0_group(eck), pt);
+	if (!len)
+		return 0;
 
 	ret = 0;
 	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,

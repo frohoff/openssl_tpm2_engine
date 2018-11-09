@@ -1022,3 +1022,29 @@ TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir)
 
 	return TPM_RC_SUCCESS;
 }
+
+int tpm2_get_public_point(TPM2B_ECC_POINT *tpmpt, const EC_GROUP *group,
+			  const EC_POINT *pt)
+{
+	BN_CTX *ctx;
+	size_t len;
+	unsigned char point[MAX_ECC_KEY_BYTES*2 + 1];
+
+	ctx = BN_CTX_new();
+	if (!ctx)
+		return 0;
+	BN_CTX_start(ctx);
+	len = EC_POINT_point2oct(group, pt, POINT_CONVERSION_UNCOMPRESSED,
+				 point, sizeof(point), ctx);
+	BN_CTX_free(ctx);
+
+	len--;
+	len >>= 1;
+
+	memcpy(tpmpt->point.x.t.buffer, point + 1, len);
+	tpmpt->point.x.t.size = len;
+	memcpy(tpmpt->point.y.t.buffer, point + 1 + len, len);
+	tpmpt->point.y.t.size = len;
+
+	return len;
+}
