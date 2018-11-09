@@ -203,7 +203,7 @@ static int tpm2_rsa_priv_dec(int flen,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_RSA_Decrypt,
-			 authHandle, auth, 0,
+			 authHandle, auth, TPMA_SESSION_ENCRYPT,
 			 TPM_RH_NULL, NULL, 0);
 	if (rc) {
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
@@ -282,7 +282,7 @@ static int tpm2_rsa_priv_enc(int flen,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_RSA_Decrypt,
-			 authHandle, auth, 0,
+			 authHandle, auth, TPMA_SESSION_DECRYPT,
 			 TPM_RH_NULL, NULL, 0);
 
 	if (rc) {
