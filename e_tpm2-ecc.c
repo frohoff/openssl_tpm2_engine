@@ -280,7 +280,7 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 			 (COMMAND_PARAMETERS *)&in,
 			 NULL,
 			 TPM_CC_ECDH_ZGen,
-			 authHandle, auth, 0,
+			 authHandle, auth, TPMA_SESSION_ENCRYPT,
 			 TPM_RH_NULL, NULL, 0);
 	if (rc) {
 		tpm2_error(rc, "TPM2_ECDH_ZGen");
