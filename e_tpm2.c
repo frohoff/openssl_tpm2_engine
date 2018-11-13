@@ -316,7 +316,6 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     struct tpm_ui *ui, void *cb_data)
 {
 	EVP_PKEY *pkey;
-	TPM2B_PUBLIC p;
 	BIO *bf;
 	TSSLOADABLE *tssl = NULL;
 	TSSPRIVKEY *tpk = NULL;
@@ -331,6 +330,8 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	ASN1_OCTET_STRING *pubkey;
 	STACK_OF(TSSOPTPOLICY) *policy;
 	ASN1_OCTET_STRING *privkey;
+	ASN1_OCTET_STRING *secret = NULL;
+	Import_In iin;
 
 	if (!key_id && !bio) {
 		fprintf(stderr, "key_id or bio is NULL\n");
@@ -367,6 +368,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		pubkey = tpk->pubkey;
 		privkey = tpk->privkey;
 		policy = tpk->policy;
+		secret = tpk->secret;
 	} else {
 		BIO_seek(bf, 0);
 		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
@@ -411,8 +413,10 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 			goto err;
 		}
 	} else if (strcmp(OID_importableKey, oid) == 0) {
-		fprintf(stderr, "Importable keys currently unsupported\n");
-		goto err;
+		if (!secret) {
+			fprintf(stderr, "Importable keys require an encrypted secret\n");
+			goto err;
+		}
 	} else {
 		fprintf(stderr, "Unrecognised object type\n");
 		goto err;
@@ -435,23 +439,100 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		/* older keys have absent parent */
 		app_data->parent = TPM_RH_OWNER;
 
-	app_data->priv = OPENSSL_malloc(privkey->length);
-	if (!app_data->priv)
-		goto err_free;
-	app_data->priv_len = privkey->length;
-	memcpy(app_data->priv, privkey->data, app_data->priv_len);
-
 	app_data->pub = OPENSSL_malloc(pubkey->length);
 	if (!app_data->pub)
 		goto err_free;
 	app_data->pub_len = pubkey->length;
 	memcpy(app_data->pub, pubkey->data, app_data->pub_len);
+
 	buffer = app_data->pub;
 	size = app_data->pub_len;
-	TPM2B_PUBLIC_Unmarshal(&p, &buffer, &size, FALSE);
-	app_data->name_alg = p.publicArea.nameAlg;
+	TPM2B_PUBLIC_Unmarshal(&iin.objectPublic, &buffer, &size, FALSE);
+	app_data->name_alg = iin.objectPublic.publicArea.nameAlg;
+
+	if (strcmp(OID_importableKey, oid) == 0) {
+		TPM_HANDLE session;
+		TSS_CONTEXT *tssContext;
+		TPM_RC rc;
+		const char *reason;
+		TPM2B_PRIVATE priv_2b;
+		BYTE *buf;
+		UINT16 written;
+		INT32 size;
+		Import_Out iout;
+
+		rc = tpm2_create(&tssContext, app_data->dir);
+		if (rc) {
+			reason="tpm2_create";
+			goto import_err;
+		}
+
+		if ((app_data->parent & 0xff000000) == 0x40000000) {
+			tpm2_load_srk(tssContext, &iin.parentHandle,
+				      srk_auth, NULL, app_data->parent, 1);
+		} else {
+			iin.parentHandle = app_data->parent;
+		}
+		rc = tpm2_get_session_handle(tssContext, &session,
+					     iin.parentHandle,
+					     TPM_SE_HMAC,
+					     iin.objectPublic.publicArea.nameAlg);
+		if (rc) {
+			reason="tpm2_get_session_handle";
+			goto import_err;
+		}
+
+		/* no inner encryption */
+		iin.encryptionKey.t.size = 0;
+		iin.symmetricAlg.algorithm = TPM_ALG_NULL;
+
+		/* for importable keys the private key is actually the
+		 * outer wrapped duplicate structure */
+		buffer = privkey->data;
+		size = privkey->length;
+		TPM2B_PRIVATE_Unmarshal(&iin.duplicate, &buffer, &size);
+
+		buffer = secret->data;
+		size = secret->length;
+		TPM2B_ENCRYPTED_SECRET_Unmarshal(&iin.inSymSeed, &buffer, &size);
+		rc = TSS_Execute(tssContext,
+				 (RESPONSE_PARAMETERS *)&iout,
+				 (COMMAND_PARAMETERS *)&iin,
+				 NULL,
+				 TPM_CC_Import,
+				 session, srk_auth, 0,
+				 TPM_RH_NULL, NULL, 0);
+		if (rc)
+			tpm2_flush_handle(tssContext, session);
+		reason = "TPM2_Import";
+
+	import_err:
+		tpm2_flush_srk(tssContext, iin.parentHandle);
+		TSS_Delete(tssContext);
+		if (rc) {
+			tpm2_error(rc, reason);
+			goto err_free;
+		}
+		buf = priv_2b.t.buffer;
+		size = sizeof(priv_2b.t.buffer);
+		TSS_TPM2B_PRIVATE_Marshal(&iout.outPrivate, &written,
+					  &buf, &size);
+		app_data->priv = OPENSSL_malloc(written);
+		if (!app_data->priv)
+			goto err_free;
+		app_data->priv_len = written;
+		memcpy(app_data->priv, priv_2b.t.buffer, written);
+	} else {
+		app_data->priv = OPENSSL_malloc(privkey->length);
+		if (!app_data->priv)
+			goto err_free;
+
+		app_data->priv_len = privkey->length;
+		memcpy(app_data->priv, privkey->data, app_data->priv_len);
+	}
+
 	/* create the new objects to return */
-	pkey = tpm2_to_openssl_public(&p.publicArea);
+	pkey = tpm2_to_openssl_public(&iin.objectPublic.publicArea);
 	if (!pkey) {
 		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
 		goto err_free;
@@ -463,7 +544,8 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 			goto err_free_key;
 	}
 
-	if (!(p.publicArea.objectAttributes.val & TPMA_OBJECT_USERWITHAUTH))
+	if (!(iin.objectPublic.publicArea.objectAttributes.val &
+	      TPMA_OBJECT_USERWITHAUTH))
 		app_data->req_policy_session = 1;
 
 	if (!tpm2_engine_load_key_policy(app_data, policy))

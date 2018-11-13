@@ -58,6 +58,7 @@ static struct option long_options[] = {
 	{"list-curves", 0, 0, 'l'},
 	{"da", 0, 0, 'd'},
 	{"key-policy", 1, 0, 'c'},
+	{"import", 1, 0, 'i'},
 	/*
 	 * The option --deprecated allows us to create old format keys
 	 * for the purposes of testing.  It should never be used in
@@ -98,6 +99,8 @@ usage(char *argv0)
 		"\t                              Supported curves are bnp256, nisp256, nisp384\n"
 		"\t-l, --list-curves             List all the Elliptic Curves the TPM supports\n"
 		"\t-c, --key-policy              Specify a policy for the TPM key\n"
+		"\t-i, --import <pubkey>         Create an importable key with the outer\n"
+		"                                wrapper encrypted to <pubkey>\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -270,6 +273,141 @@ TPM_RC tpm2_innerwrap(TPMT_SENSITIVE *s,
 	return TPM_RC_SUCCESS;
 }
 
+TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
+		      TPMT_SENSITIVE *s,
+		      TPMT_PUBLIC *pub,
+		      TPM2B_PRIVATE *p,
+		      TPM2B_ENCRYPTED_SECRET *enc_secret)
+{
+	TPM2B_PRIVATE secret, seed;
+	/*  amount of room in the buffer for the integrity TPM2B */
+	const int name_alg_size = TSS_GetDigestSize(pub->nameAlg);
+	const int integrity_skip = name_alg_size + 2;
+	//	BYTE *integrity = p->t.buffer;
+	BYTE *sensitive = p->t.buffer + integrity_skip;
+	BYTE *buf;
+	TPM2B *t2b;
+	INT32 size;
+	size_t ssize;
+	UINT16 bsize, written = 0;
+	EVP_PKEY *ephemeral = NULL;
+	EVP_PKEY_CTX *ctx;
+	TPM2B_ECC_POINT pub_pt, ephemeral_pt;
+	EC_KEY *e_parent, *e_ephemeral;
+	const EC_GROUP *group;
+	unsigned char aeskey[T2_AES_KEY_BYTES];
+	/* hmac follows namealg, so set to max size */
+	TPM2B_KEY hmackey;
+	TPMT_HA hmac;
+	TPM2B_NAME name;
+	TPM2B_DIGEST digest;
+	unsigned char null_iv[AES_128_BLOCK_SIZE_BYTES];
+	TPM2B null_2b;
+
+	null_2b.size = 0;
+
+	if (EVP_PKEY_type(EVP_PKEY_id(parent)) != EVP_PKEY_EC) {
+		printf("Can only currently wrap to EC parent\n");
+		return TPM_RC_ASYMMETRIC;
+	}
+
+	e_parent = EVP_PKEY_get1_EC_KEY(parent);
+	group = EC_KEY_get0_group(e_parent);
+
+	/* marshal the sensitive into a TPM2B */
+	t2b = (TPM2B *)sensitive;
+	buf = t2b->buffer;
+	size = sizeof(p->t.buffer) - integrity_skip;
+	bsize = 0;
+	TSS_TPMT_SENSITIVE_Marshal(s, &bsize, &buf, &size);
+	buf = (BYTE *)&t2b->size;
+	size = 2;
+	TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
+	/* set the total size of the private entity */
+	p->b.size = bsize + sizeof(UINT16) + integrity_skip;
+
+	/* compute the elliptic curve shared (and encrypted) secret */
+	ctx = EVP_PKEY_CTX_new(parent, NULL);
+	if (!ctx)
+		goto openssl_err;
+	if (EVP_PKEY_keygen_init(ctx) != 1)
+		goto openssl_err;
+	EVP_PKEY_keygen(ctx, &ephemeral);
+	if (!ephemeral)
+		goto openssl_err;
+	/* otherwise the ctx free will free the key */
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+	CRYPTO_add(&ephemeral->references, 1, CRYPTO_LOCK_EVP_PKEY);
+#else
+	EVP_PKEY_up_ref(ephemeral);
+#endif
+	EVP_PKEY_CTX_free(ctx);
+
+	e_ephemeral = EVP_PKEY_get1_EC_KEY(ephemeral);
+
+	/* now begin again with the ephemeral private key because the
+	 * context must be initialised with the private key */
+	ctx = EVP_PKEY_CTX_new(ephemeral, NULL);
+	if (!ctx)
+		goto openssl_err;
+	if (EVP_PKEY_derive_init(ctx) != 1)
+		goto openssl_err;
+	if (EVP_PKEY_derive_set_peer(ctx, parent) != 1)
+		goto openssl_err;
+	ssize = sizeof(secret.t.buffer);
+	if (EVP_PKEY_derive(ctx, secret.b.buffer, &ssize) != 1)
+		goto openssl_err;
+	secret.b.size = ssize;
+	EVP_PKEY_CTX_free(ctx);
+
+	tpm2_get_public_point(&pub_pt, group, EC_KEY_get0_public_key(e_parent));
+	tpm2_get_public_point(&ephemeral_pt, group,
+			      EC_KEY_get0_public_key(e_ephemeral));
+	EC_KEY_free(e_parent);
+	EC_KEY_free(e_ephemeral);
+
+	/* now pass the secret through KDFe to get the shared secret
+	 * The size is the size of the parent name algorithm which we
+	 * assume to be sha256 */
+	TSS_KDFE(seed.b.buffer, pub->nameAlg, &secret.b, "DUPLICATE",
+		 &ephemeral_pt.point.x.b, &pub_pt.point.x.b,
+		 SHA256_DIGEST_LENGTH*8);
+	seed.b.size = SHA256_DIGEST_LENGTH;
+
+	/* and finally through KDFa to get the aes symmetric encryption key */
+	tpm2_ObjectPublic_GetName(&name, pub);
+	TSS_KDFA(aeskey, pub->nameAlg, &seed.b, "STORAGE", &name.b, &null_2b,
+		 T2_AES_KEY_BITS);
+	/* and then the outer HMAC key */
+	hmackey.b.size = name_alg_size;
+	TSS_KDFA(hmackey.b.buffer, pub->nameAlg, &seed.b, "INTEGRITY",
+		 &null_2b, &null_2b, name_alg_size * 8);
+	/* OK the ephermeral public point is now the encrypted secret */
+	size = sizeof(ephemeral_pt);
+	buf = enc_secret->b.buffer;
+	TSS_TPM2B_ECC_POINT_Marshal(&ephemeral_pt, &written,
+				    &buf, &size);
+	enc_secret->b.size = written;
+	memset(null_iv, 0, sizeof(null_iv));
+	TSS_AES_EncryptCFB(sensitive, T2_AES_KEY_BITS, aeskey, null_iv,
+			   p->t.size - integrity_skip, sensitive);
+	hmac.hashAlg = pub->nameAlg;
+	TSS_HMAC_Generate(&hmac, &hmackey,
+			  p->t.size - integrity_skip, sensitive,
+			  name.b.size, name.b.buffer,
+			  0, NULL);
+	digest.b.size  = name_alg_size;
+	memcpy(digest.b.buffer, &hmac.digest, digest.b.size);
+	size = integrity_skip;
+	buf = p->t.buffer;
+	TSS_TPM2B_DIGEST_Marshal(&digest, &written, &buf, &size);
+	return TPM_RC_SUCCESS;
+
+ openssl_err:
+	ERR_print_errors_fp(stderr);
+	return TPM_RC_ASYMMETRIC;
+}
+
 TPM_RC
 parse_policy_file(const char *policy_file, STACK_OF(TSSOPTPOLICY) *sk,
 		  char *auth, TPMT_HA *digest)
@@ -378,7 +516,7 @@ int
 openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		      BYTE *privkey, int privkey_len, int empty_auth,
 		      TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk,
-		      int version)
+		      int version, TPM2B_ENCRYPTED_SECRET *secret)
 {
 	union {
 		TSSLOADABLE tssl;
@@ -406,7 +544,14 @@ openssl_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 
 		PEM_write_bio_TSSLOADABLE(outb, &k.tssl);
 	} else {
-		k.tpk.type = OBJ_txt2obj(OID_loadableKey, 1);
+		if (secret) {
+			k.tpk.type = OBJ_txt2obj(OID_importableKey, 1);
+			k.tpk.secret = ASN1_OCTET_STRING_new();
+			ASN1_STRING_set(k.tpk.secret, secret->t.secret,
+					secret->t.size);
+		} else {
+			k.tpk.type = OBJ_txt2obj(OID_loadableKey, 1);
+		}
 		k.tpk.emptyAuth = empty_auth;
 		k.tpk.parent = ASN1_INTEGER_new();
 		ASN1_INTEGER_set(k.tpk.parent, parent);
@@ -437,6 +582,27 @@ openssl_read_key(char *filename)
         }
 
         if ((pkey = PEM_read_bio_PrivateKey(b, NULL, PEM_def_callback, NULL)) == NULL) {
+                fprintf(stderr, "Reading key %s from disk failed.\n", filename);
+                openssl_print_errors();
+        }
+	BIO_free(b);
+
+        return pkey;
+}
+
+EVP_PKEY *
+openssl_read_public_key(char *filename)
+{
+        BIO *b = NULL;
+	EVP_PKEY *pkey;
+
+        b = BIO_new_file(filename, "r");
+        if (b == NULL) {
+                fprintf(stderr, "Error opening file for read: %s\n", filename);
+                return NULL;
+        }
+
+        if ((pkey = PEM_read_bio_PUBKEY(b, NULL, NULL, NULL)) == NULL) {
                 fprintf(stderr, "Reading key %s from disk failed.\n", filename);
                 openssl_print_errors();
         }
@@ -784,7 +950,7 @@ int main(int argc, char **argv)
 	Create_Out cout;
 	TPM2B_PUBLIC *pub;
 	TPM2B_PRIVATE *priv;
-	char *key = NULL, *parent_auth = NULL;
+	char *key = NULL, *parent_auth = NULL, *import = NULL;
 	TPMI_ECC_CURVE ecc = TPM_ECC_NONE;
 	int rsa = -1;
 	uint32_t noda = TPMA_OBJECT_NODA;
@@ -794,10 +960,15 @@ int main(int argc, char **argv)
 	int version = 1;
 	uint32_t sizeInBytes;
 	TPMT_HA digest;
+	TPM2B_ENCRYPTED_SECRET secret, *enc_secret = NULL;
+
+	OpenSSL_add_all_digests();
+	/* may be needed to decrypt the key */
+	OpenSSL_add_all_ciphers();
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ab:p:hw:vk:re:ldc:",
+		c = getopt_long(argc, argv, "n:s:ab:p:hw:vk:re:ldc:i:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -873,6 +1044,9 @@ int main(int argc, char **argv)
 			case 'c':
 				policyFilename = optarg;
 				break;
+			case 'i':
+				import = optarg;
+				break;
 			case OPT_DEPRECATED:
 				version = 0;
 				break;
@@ -910,21 +1084,9 @@ int main(int argc, char **argv)
 		rsa = 0;
 	}
 
-	dir = tpm2_set_unique_tssdir();
-	rc = tpm2_create(&tssContext, dir);
-	if (rc) {
-		reason = "TSS_Create";
-		goto out_err;
-	}
-
-	if ((parent & 0xff000000) == 0x40000000) {
-		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, version);
-		if (rc) {
-			reason = "tpm2_load_srk";
-			goto out_delete;
-		}
-	} else {
-		phandle = parent;
+	if (import && !wrap) {
+		fprintf(stderr, "Can only wrap importable keys\n");
+		exit(1);
 	}
 
 	digest.hashAlg = name_alg;
@@ -936,13 +1098,13 @@ int main(int argc, char **argv)
 		if (!sk) {
 			rc = NOT_TPM_ERROR;
 			reason="sk_TSSOPTPOLICY_new_null allocation";
-			goto out_flush;
+			goto out_err;
 		}
 
 		rc = parse_policy_file(policyFilename, sk, auth, &digest);
 		if (rc) {
 			reason = "parse_policy_file";
-			goto out_flush;
+			goto out_free_policy;
 		}
 	}
 
@@ -955,17 +1117,94 @@ int main(int argc, char **argv)
 				fprintf(stderr, "Passwords do not match\n");
 				reason = "authorization";
 				rc = NOT_TPM_ERROR;
-				goto out_flush;
+				goto out_free_auth;
 			}
 		}
+	}
+
+	if (import) {
+		EVP_PKEY *p_pkey = openssl_read_public_key(import);
+		EVP_PKEY *pkey = openssl_read_key(wrap);
+		TPMT_SENSITIVE s;
+
+		/* steal existing private and public areas */
+		pub = &iin.objectPublic;
+		priv = &iout.outPrivate;
+
+		rc = NOT_TPM_ERROR;
+
+		if (!p_pkey || !pkey) {
+			reason = "read openssl key";
+			goto out_err;
+		}
+
+		/* FIXME: should do RSA as well, it's just more complex */
+		if (EVP_PKEY_type(EVP_PKEY_id(p_pkey)) != EVP_PKEY_EC) {
+			reason = "parent not EC key";
+			goto out_err;
+		}
+
+		rc = openssl_to_tpm_public(pub, pkey);
+		if (rc) {
+			reason = "openssl_to_tpm_public";
+			goto out_err;
+		}
+		if (policyFilename) {
+			pub->publicArea.objectAttributes.val &=
+				~TPMA_OBJECT_USERWITHAUTH;
+			rc = TSS_TPM2B_Create(
+				&pub->publicArea.authPolicy.b,
+				(uint8_t *)&digest.digest, sizeInBytes,
+				sizeof(TPMU_HA));
+			if (rc) {
+				reason = "set policy";
+				goto out_err;
+			}
+		}
+
+		rc = wrap_key(&s, auth, pkey);
+		if (rc) {
+			reason = "wrap_key";
+			goto out_err;
+		}
+
+		/* set the NODA flag */
+		pub->publicArea.objectAttributes.val |= noda;
+
+		rc = tpm2_outerwrap(p_pkey, &s, &pub->publicArea,
+				    priv, &secret);
+		if (rc) {
+			reason = "tpm2_outerwrap";
+			goto out_err;
+		}
+
+		enc_secret = &secret;
+
+		/* skip over all the TPM connection stuff  */
+		goto write_key;
+	}
+
+	dir = tpm2_set_unique_tssdir();
+	rc = tpm2_create(&tssContext, dir);
+	if (rc) {
+		reason = "TSS_Create";
+		goto out_free_auth;
+	}
+
+	if ((parent & 0xff000000) == 0x40000000) {
+		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, version);
+		if (rc) {
+			reason = "tpm2_load_srk";
+			goto out_delete;
+		}
+	} else {
+		phandle = parent;
 	}
 
 	if (wrap) {
 		EVP_PKEY *pkey;
 		TPMT_SENSITIVE s;
 
-		/* may be needed to decrypt the key */
-		OpenSSL_add_all_ciphers();
 		pkey = openssl_read_key(wrap);
 		if (!pkey) {
 			rc = NOT_TPM_ERROR;
@@ -1113,6 +1352,10 @@ int main(int argc, char **argv)
 		priv = &cout.outPrivate;
 	}
 	tpm2_flush_srk(tssContext, phandle);
+	TSS_Delete(tssContext);
+	tpm2_rm_tssdir(dir, 0);
+
+ write_key:
 	buffer = pubkey;
 	pubkey_len = 0;
 	size = sizeof(pubkey);
@@ -1123,19 +1366,20 @@ int main(int argc, char **argv)
 	TSS_TPM2B_PRIVATE_Marshal(priv, &privkey_len, &buffer, &size);
 	openssl_write_tpmfile(filename, pubkey, pubkey_len,
 			      privkey, privkey_len, auth == NULL, parent, sk,
-			      version);
+			      version, enc_secret);
 	free_policy(sk);
-	TSS_Delete(tssContext);
-	tpm2_rm_tssdir(dir, 0);
 
 	exit(0);
 
  out_flush:
 	tpm2_flush_srk(tssContext, phandle);
-	free_policy(sk);
  out_delete:
 	TSS_Delete(tssContext);
 	rmdir(dir);
+ out_free_auth:
+	free(auth);
+ out_free_policy:
+	free_policy(sk);
  out_err:
 	if (rc == NOT_TPM_ERROR)
 		fprintf(stderr, "%s failed\n", reason);

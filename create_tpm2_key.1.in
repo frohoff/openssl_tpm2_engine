@@ -7,6 +7,13 @@ Can be used to create a TPM loadable representation of a private key.
 The key is either internal to the TPM or wrapped from an existing
 private key.
 
+Note that this command can now create two different types of keys:
+importable and loadable (the default type being loadable).  The
+difference between the two is that the creation of loadable keys
+requires the presence of the actual TPM the key will be loaded on.  An
+importable key can be created without any TPM contact provided you
+have the public key of the parent the new key will be imported to.
+
 [files]
 
 Policy File Format
@@ -69,3 +76,13 @@ Create a self-signed cert using the TPM engine:
 3. Test using openssl:
  $ openssl s_server -cert <certfilename> -www -accept 4433 -keyform engine -engi
 ne tpm -key <keyfilename>
+
+Creating an importable key:
+
+1. First get the public key of the storage primary seed (as an elliptic
+   curve key):
+  $ tsscreateprimary -ecc nistp256 -hi o -opem srk.pub
+
+2. Once you have this public key, you can export it anywhere and do the
+   key wrapping
+  $ create_tpm2_key --import srk.pub --wrap my_key.priv my_key.tpm
