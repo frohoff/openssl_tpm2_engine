@@ -23,15 +23,6 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			 TPM_ALG_ID name_alg);
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth);
-TPM_RC tpm2_SensitiveToDuplicate(TPMT_SENSITIVE *s,
-				 TPM2B_NAME *name,
-				 TPM_ALG_ID nalg,
-				 TPM2B_SEED *seed,
-				 TPMT_SYM_DEF_OBJECT *symdef,
-				 TPM2B_DATA *innerkey,
-				 TPM2B_PRIVATE *p);
-TPM_RC tpm2_ObjectPublic_GetName(TPM2B_NAME *name,
-				 TPMT_PUBLIC *tpmtPublic);
 TPMI_ECC_CURVE tpm2_curve_name_to_TPMI(const char *name);
 int tpm2_curve_name_to_nid(TPMI_ECC_CURVE curve);
 TPMI_ECC_CURVE tpm2_nid_to_curve_name(int nid);
