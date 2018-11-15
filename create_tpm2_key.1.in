@@ -70,12 +70,10 @@ Create a self-signed cert using the TPM engine:
    need to do tssreadpublic -p 81000001 before it will work.
 
 2. Make the openssl certificate request:
- $ openssl req -keyform engine -engine tpm -key <key file> -new -x509 -days 365 
--out <certfilename>
+ $ openssl req -keyform engine -engine tpm2 -key <key file> -new -x509 -days 365 -out <certfilename>
 
 3. Test using openssl:
- $ openssl s_server -cert <certfilename> -www -accept 4433 -keyform engine -engi
-ne tpm -key <keyfilename>
+ $ openssl s_server -cert <certfilename> -www -accept 4433 -keyform engine -engine tpm2 -key <keyfilename>
 
 Creating an importable key:
 
