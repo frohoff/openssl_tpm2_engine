@@ -373,6 +373,8 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		BIO_seek(bf, 0);
 		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
 		if (tssl) {
+			/* have error from failed TSSPRIVKEY load */
+			ERR_clear_error();
 			type = tssl->type;
 			empty_auth = tssl->emptyAuth;
 			parent = tssl->parent;
