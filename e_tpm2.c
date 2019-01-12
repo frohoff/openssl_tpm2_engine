@@ -517,6 +517,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		}
 		buf = priv_2b.t.buffer;
 		size = sizeof(priv_2b.t.buffer);
+		written = 0;
 		TSS_TPM2B_PRIVATE_Marshal(&iout.outPrivate, &written,
 					  &buf, &size);
 		app_data->priv = OPENSSL_malloc(written);
