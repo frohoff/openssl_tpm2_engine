@@ -1,8 +1,11 @@
-EXTRA_DIST = README openssl.cnf.sample create_tpm2_key.1
+EXTRA_DIST = README openssl.cnf.sample
 
+if NATIVE_BUILD
+EXTRA_DIST += create_tpm2_key.1
 man1_MANS = create_tpm2_key.1
 
 CLEANFILES = $(man1_MANS)
+endif
 
 openssl_engine_LTLIBRARIES=libtpm2.la
 bin_PROGRAMS=create_tpm2_key
