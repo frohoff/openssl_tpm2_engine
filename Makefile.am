@@ -23,4 +23,8 @@ create_tpm2_key_CFLAGS=${DEPS_CFLAGS} -Werror
 $(builddir)/%.1: $(srcdir)/%.1.in $(top_builddir)/%
 	$(HELP2MAN) --no-info -i $< -o $@ $(top_builddir)/$*
 
+# openssl from 1.1.0 looks for engine.so not libengine.so
+install-data-hook:
+	cd '$(DESTDIR)$(openssl_enginedir)' && $(LN_S) -f libtpm2@SHREXT@ tpm2@SHREXT@
+
 SUBDIRS = tests
