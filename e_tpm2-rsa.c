@@ -180,12 +180,19 @@ static int tpm2_rsa_priv_dec(int flen,
 	}
 
 	rv = -1;
-	if (padding != RSA_PKCS1_PADDING) {
-		fprintf(stderr, "Non PKCS1 padding asked for\n");
+	if (padding == RSA_PKCS1_PADDING) {
+		in.inScheme.scheme = TPM_ALG_RSAES;
+	} else if (padding == RSA_NO_PADDING) {
+		in.inScheme.scheme = TPM_ALG_NULL;
+	} else if (padding == RSA_PKCS1_OAEP_PADDING) {
+		in.inScheme.scheme = TPM_ALG_OAEP;
+		/* for openssl RSA, the padding is hard coded */
+		in.inScheme.details.oaep.hashAlg = TPM_ALG_SHA1;
+	} else {
+		fprintf(stderr, "Can't process padding type: %d\n", padding);
 		goto out;
 	}
 
-	in.inScheme.scheme = TPM_ALG_RSAES;
 	in.cipherText.t.size = flen;
 	memcpy(in.cipherText.t.buffer, from, flen);
 	in.label.t.size = 0;
@@ -243,8 +250,28 @@ static int tpm2_rsa_priv_enc(int flen,
 	struct policy_command *commands;
 	TPM_ALG_ID nameAlg;
 
-	if (padding != RSA_PKCS1_PADDING) {
-		fprintf(stderr, "Non PKCS1 padding asked for\n");
+	/* this is slightly paradoxical that we're doing a Decrypt
+	 * operation: the only material difference between decrypt and
+	 * encrypt is where the padding is applied or checked, so if
+	 * you apply your own padding up to the RSA block size and use
+	 * TPM_ALG_NULL, which means no padding check, a decrypt
+	 * operation effectively becomes an encrypt */
+	size = RSA_size(rsa);
+	in.inScheme.scheme = TPM_ALG_NULL;
+	in.cipherText.t.size = size;
+	in.label.t.size = 0;
+
+	/* note: currently openssl doesn't do OAEP signatures and all
+	 * PSS signatures are padded and handled in the RSA layer
+	 * as a no-padding private encryption */
+	if (padding == RSA_PKCS1_PADDING) {
+		RSA_padding_add_PKCS1_type_1(in.cipherText.t.buffer, size,
+					     from, flen);
+	} else if (padding == RSA_NO_PADDING) {
+		/* do nothing, we're already doing a no padding encrypt */
+		memcpy(in.cipherText.t.buffer, from, size);
+	} else {
+		fprintf(stderr, "Can't process padding type: %d\n", padding);
 		return -1;
 	}
 
@@ -270,18 +297,6 @@ static int tpm2_rsa_priv_enc(int flen,
 		if (rc)
 			goto out;
 	}
-
-	/* this is slightly paradoxical that we're doing a Decrypt
-	 * operation: the only material difference between decrypt and
-	 * encrypt is where the padding is applied or checked, so if
-	 * you apply your own padding up to the RSA block size and use
-	 * TPM_ALG_NULL, which means no padding check, a decrypt
-	 * operation effectively becomes an encrypt */
-	size = RSA_size(rsa);
-	in.inScheme.scheme = TPM_ALG_NULL;
-	in.cipherText.t.size = size;
-	RSA_padding_add_PKCS1_type_1(in.cipherText.t.buffer, size, from, flen);
-	in.label.t.size = 0;
 
 	rc = TSS_Execute(tssContext,
 			 (RESPONSE_PARAMETERS *)&out,
