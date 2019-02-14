@@ -25,6 +25,6 @@ $(builddir)/%.1: $(srcdir)/%.1.in $(top_builddir)/%
 
 # openssl from 1.1.0 looks for engine.so not libengine.so
 install-data-hook:
-	cd '$(DESTDIR)$(openssl_enginedir)' && $(LN_S) -f libtpm2@SHREXT@ tpm2@SHREXT@
+	cd $(DESTDIR)$(openssl_enginedir) && $(LN_S) -f libtpm2@SHREXT@ tpm2@SHREXT@
 
 SUBDIRS = tests
