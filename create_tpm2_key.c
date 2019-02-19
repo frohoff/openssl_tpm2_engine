@@ -42,6 +42,7 @@
 #define NOT_TPM_ERROR (0xffffffff)
 
 #define OPT_DEPRECATED 0x1ff
+#define OPT_RESTRICTED 0x1fe
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
@@ -59,6 +60,7 @@ static struct option long_options[] = {
 	{"da", 0, 0, 'd'},
 	{"key-policy", 1, 0, 'c'},
 	{"import", 1, 0, 'i'},
+	{"restricted", 0, 0, OPT_RESTRICTED},
 	/*
 	 * The option --deprecated allows us to create old format keys
 	 * for the purposes of testing.  It should never be used in
@@ -101,6 +103,10 @@ usage(char *argv0)
 		"\t-c, --key-policy              Specify a policy for the TPM key\n"
 		"\t-i, --import <pubkey>         Create an importable key with the outer\n"
 		"                                wrapper encrypted to <pubkey>\n"
+		"\t--restricted                  Create a restricted key.  A restricted key\n"
+		"                                may not be used for general signing or\n"
+		"                                decryption but may be the parent of other\n"
+		"                                keys (i.e. it is a storage key)\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -933,6 +939,54 @@ void free_policy(STACK_OF(TSSOPTPOLICY) *sk)
 	sk_TSSOPTPOLICY_free(sk);
 }
 
+/*
+ * A restricted key needs a symmetric seed and algorithm so it can
+ * derive a symmetric encryption key used to protect the sensitive
+ * parts of child objects.  The requirement is that the symmetric seed
+ * be the same size as the name algorithm hash.  We elect to generate
+ * the symmetric seed from the hash of the public and private parts of
+ * the key meaning the same wrapped private key always generates the
+ * same symmetric seed.  This means that any child key will be
+ * loadable by any parent created from the wrapped key (including a
+ * parent wrapped for a different TPM)
+ */
+void generate_symmetric(TPMT_PUBLIC *pub, TPMT_SENSITIVE *priv)
+{
+	TPMT_HA digest;
+
+	digest.hashAlg = pub->nameAlg;
+
+	switch (pub->type) {
+	case TPM_ALG_RSA:
+		TSS_Hash_Generate(&digest,
+				  pub->unique.rsa.t.size, pub->unique.rsa.t.buffer,
+				  priv->sensitive.rsa.t.size, priv->sensitive.rsa.t.buffer,
+				  0, NULL);
+		pub->parameters.rsaDetail.symmetric.algorithm = TPM_ALG_AES;
+		pub->parameters.rsaDetail.symmetric.keyBits.aes = 128;
+		pub->parameters.rsaDetail.symmetric.mode.aes = TPM_ALG_CFB;
+		break;
+	case TPM_ALG_ECC:
+		TSS_Hash_Generate(&digest,
+				  pub->unique.ecc.x.t.size, pub->unique.ecc.x.t.buffer,
+				  pub->unique.ecc.y.t.size, pub->unique.ecc.y.t.buffer,
+				  priv->sensitive.ecc.t.size, priv->sensitive.ecc.t.buffer,
+				  0, NULL);
+		pub->parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
+		pub->parameters.eccDetail.symmetric.keyBits.aes = 128;
+		pub->parameters.eccDetail.symmetric.mode.aes = TPM_ALG_CFB;
+		break;
+	default:
+		/* impossible */
+		break;
+	}
+	priv->seedValue.b.size = TSS_GetDigestSize(digest.hashAlg);
+	memcpy(priv->seedValue.b.buffer, digest.digest.tssmax, priv->seedValue.b.size);
+	pub->objectAttributes.val |= TPMA_OBJECT_RESTRICTED;
+	/* a restricted key can't sign */
+	pub->objectAttributes.val &= ~TPMA_OBJECT_SIGN;
+}
+
 int main(int argc, char **argv)
 {
 	char *filename, *wrap = NULL, *auth = NULL, *policyFilename = NULL;
@@ -961,6 +1015,7 @@ int main(int argc, char **argv)
 	uint32_t sizeInBytes;
 	TPMT_HA digest;
 	TPM2B_ENCRYPTED_SECRET secret, *enc_secret = NULL;
+	int restricted = 0;
 
 	OpenSSL_add_all_digests();
 	/* may be needed to decrypt the key */
@@ -1049,6 +1104,9 @@ int main(int argc, char **argv)
 				break;
 			case OPT_DEPRECATED:
 				version = 0;
+				break;
+			case OPT_RESTRICTED:
+				restricted = 1;
 				break;
 			default:
 				printf("Unknown option '%c'\n", c);
@@ -1171,6 +1229,9 @@ int main(int argc, char **argv)
 		/* set the NODA flag */
 		pub->publicArea.objectAttributes.val |= noda;
 
+		if (restricted)
+			generate_symmetric(&pub->publicArea, &s);
+
 		rc = tpm2_outerwrap(p_pkey, &s, &pub->publicArea,
 				    priv, &secret);
 		if (rc) {
@@ -1253,6 +1314,9 @@ int main(int argc, char **argv)
 		/* set the NODA flag */
 		iin.objectPublic.publicArea.objectAttributes.val |= noda;
 
+		if (restricted)
+			generate_symmetric(&iin.objectPublic.publicArea, &s);
+
 		rc = tpm2_innerwrap(&s, &iin.objectPublic.publicArea,
 				    &iin.symmetricAlg,
 				    &iin.encryptionKey,
@@ -1313,6 +1377,15 @@ int main(int argc, char **argv)
 		cin.inPublic.publicArea.objectAttributes.val |=
 			noda |
 			TPMA_OBJECT_SENSITIVEDATAORIGIN;
+		if (restricted) {
+			cin.inPublic.publicArea.objectAttributes.val |=
+				TPMA_OBJECT_RESTRICTED;
+			cin.inPublic.publicArea.objectAttributes.val &=
+				~TPMA_OBJECT_SIGN;
+			cin.inPublic.publicArea.parameters.asymDetail.symmetric.algorithm = TPM_ALG_AES;
+			cin.inPublic.publicArea.parameters.asymDetail.symmetric.keyBits.aes = 128;
+			cin.inPublic.publicArea.parameters.asymDetail.symmetric.mode.aes = TPM_ALG_CFB;
+		}
 		if (auth) {
 			int len = strlen(auth);
 			memcpy(&cin.inSensitive.sensitive.userAuth.b.buffer,
