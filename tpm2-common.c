@@ -852,7 +852,7 @@ const char *tpm2_set_unique_tssdir(void)
 	return dir;
 }
 
-static void tpm2_rm_keyfile(const char *dir, TPM_HANDLE key)
+void tpm2_rm_keyfile(const char *dir, TPM_HANDLE key)
 {
 	char keyfile[1024];
 
@@ -862,13 +862,12 @@ static void tpm2_rm_keyfile(const char *dir, TPM_HANDLE key)
 	unlink(keyfile);
 }
 
-void tpm2_rm_tssdir(const char *dir, TPM_HANDLE extrakey)
+void tpm2_rm_tssdir(const char *dir)
 {
-	if (extrakey)
-		tpm2_rm_keyfile(dir, extrakey);
-	tpm2_rm_keyfile(dir, 0x81000001);
-	if (rmdir(dir) < 0)
-		perror("Unlinking TPM_DATA_DIR");
+	if (rmdir(dir) < 0) {
+		fprintf(stderr, "Unlinking %s", dir);
+		perror(":");
+	}
 }
 
 TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir)

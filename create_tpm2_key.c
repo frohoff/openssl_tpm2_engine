@@ -1426,7 +1426,8 @@ int main(int argc, char **argv)
 	}
 	tpm2_flush_srk(tssContext, phandle);
 	TSS_Delete(tssContext);
-	tpm2_rm_tssdir(dir, 0);
+	tpm2_rm_keyfile(dir, phandle);
+	tpm2_rm_tssdir(dir);
 
  write_key:
 	buffer = pubkey;

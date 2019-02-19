@@ -32,7 +32,8 @@ const char *tpm2_set_unique_tssdir(void);
 TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir);
 TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 		       TPMT_PUBLIC *pub);
-void tpm2_rm_tssdir(const char *dir, TPM_HANDLE extrakey);
+void tpm2_rm_tssdir(const char *dir);
+void tpm2_rm_keyfile(const char *dir, TPM_HANDLE key);
 int tpm2_get_public_point(TPM2B_ECC_POINT *tpmpt, const EC_GROUP *group,
 			  const EC_POINT *pt);
 #endif
