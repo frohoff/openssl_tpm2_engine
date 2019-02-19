@@ -18,6 +18,7 @@ libtool
 ltmain.sh
 missing
 create_tpm2_key
+load_tpm2_key
 test-driver
 tests/*.log
 tests/*.trs

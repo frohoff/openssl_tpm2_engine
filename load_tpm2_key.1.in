@@ -1,0 +1,27 @@
+[name]
+load_tpm2_key - load a tpm2 key at a permanent index
+
+[description]
+
+Used to load keys created by create_tpm2_key(1) to a permanent
+NV index.
+
+The reasons for doing this are either to have an unrestricted key
+always accessible to the TPM without needing a key file or to have a
+new restricted decryption key parent from which other keys can be
+created as children.
+
+[examples]
+
+Create a TPM internal key and load it at index 81000101
+
+    create_tpm2_key -p 81000001 tmp.key
+    load_tpm2_key tmp.key 81000101
+
+Create a wrapped restricted decryption key at 81000101 and use it
+as the parent of a new key
+
+    openssl genrsa 2048 > key.priv
+    create_tpm2_key --restricted -w key.priv key.tpm
+    load_tpm2_key key.tpm 81000101
+    create_tpm2_key -p 81000101 newkey.tpm
