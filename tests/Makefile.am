@@ -19,6 +19,7 @@ TESTS = fail_connect.sh \
 	check_counter_timer.sh \
 	check_importable.sh \
 	check_rsa_oaep_pss.sh \
+	restricted_parent.sh \
 	stop_sw_tpm.sh
 
 AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
