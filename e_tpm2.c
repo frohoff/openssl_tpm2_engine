@@ -372,26 +372,26 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	} else {
 		BIO_seek(bf, 0);
 		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
-		if (tssl) {
-			/* have error from failed TSSPRIVKEY load */
-			ERR_clear_error();
-			type = tssl->type;
-			empty_auth = tssl->emptyAuth;
-			parent = tssl->parent;
-			pubkey = tssl->pubkey;
-			privkey = tssl->privkey;
-			policy = tssl->policy;
+		if (!tssl) {
+			if (!bio)
+				BIO_free(bf);
+			if (ppkey)
+				fprintf(stderr, "Failed to parse file %s\n", key_id);
+			return 0;
 		}
+
+		/* have error from failed TSSPRIVKEY load */
+		ERR_clear_error();
+		type = tssl->type;
+		empty_auth = tssl->emptyAuth;
+		parent = tssl->parent;
+		pubkey = tssl->pubkey;
+		privkey = tssl->privkey;
+		policy = tssl->policy;
 	}
 
 	if (!bio)
 		BIO_free(bf);
-
-	if (!tssl && !tpk) {
-		if (ppkey)
-			fprintf(stderr, "Failed to parse file %s\n", key_id);
-		return 0;
-	}
 
 	if (!ppkey) {
 		TSSLOADABLE_free(tssl);
