@@ -99,11 +99,6 @@ static const ENGINE_CMD_DEFN tpm2_cmd_defns[] = {
 	{0, NULL, NULL, 0}
 };
 
-struct tpm_ui {
-	UI_METHOD *ui_method;
-	pem_password_cb *pem_cb;
-};
-
 static char *tpm2_get_auth_ui(UI_METHOD *ui_method, char *prompt, void *cb_data)
 {
 	UI *ui = UI_new();
@@ -141,17 +136,14 @@ static char *tpm2_get_auth_ui(UI_METHOD *ui_method, char *prompt, void *cb_data)
 	return ret;
 }
 
-static char *tpm2_get_auth_pem(pem_password_cb *pem_cb,
-				      char *input_string,
-				      void *cb_data)
+static char *tpm2_get_auth_pem(char *input_string, void *cb_data)
 {
 	char auth[256], *ret;
 	int len;
 
 	EVP_set_pw_prompt(input_string);
-	if (!pem_cb)
-		pem_cb = PEM_def_callback;
-	pem_cb(auth, sizeof(auth), 0, cb_data);
+
+	PEM_def_callback(auth, sizeof(auth), 0, cb_data);
 	EVP_set_pw_prompt(NULL);
 
 	len = strlen(auth);
@@ -165,13 +157,13 @@ static char *tpm2_get_auth_pem(pem_password_cb *pem_cb,
 	return ret;
 }
 
-static char *tpm2_get_auth(struct tpm_ui *ui, char *input_string,
+static char *tpm2_get_auth(UI_METHOD *ui, char *input_string,
 			   void *cb_data)
 {
-	if (ui->ui_method)
-		return tpm2_get_auth_ui(ui->ui_method, input_string, cb_data);
+	if (ui)
+		return tpm2_get_auth_ui(ui, input_string, cb_data);
 	else
-		return tpm2_get_auth_pem(ui->pem_cb, input_string, cb_data);
+		return tpm2_get_auth_pem(input_string, cb_data);
 }
 
 void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
@@ -189,8 +181,8 @@ void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
 }
 
 static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
-				  TPM_HANDLE key,  BIO *bio,
-				  struct tpm_ui *ui, void *cb_data)
+				  TPM_HANDLE key,  UI_METHOD *ui,
+				  void *cb_data)
 {
 	TPMT_PUBLIC p;
 	TSS_CONTEXT *tssContext;
@@ -312,8 +304,8 @@ static int tpm2_engine_load_key_policy(struct app_data *app_data,
 }
 
 static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
-				     const char *key_id,  BIO *bio,
-				     struct tpm_ui *ui, void *cb_data)
+				     const char *key_id, UI_METHOD *ui,
+				     void *cb_data)
 {
 	EVP_PKEY *pkey;
 	BIO *bf;
@@ -333,8 +325,8 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	ASN1_OCTET_STRING *secret = NULL;
 	Import_In iin;
 
-	if (!key_id && !bio) {
-		fprintf(stderr, "key_id or bio is NULL\n");
+	if (!key_id) {
+		fprintf(stderr, "key_id is NULL\n");
 		return 0;
 	}
 
@@ -346,14 +338,10 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 			fprintf(stderr, "nvkey is not an NV index\n");
 			return 0;
 		}
-		return tpm2_engine_load_nvkey(e, ppkey, key, bio,
-					      ui, cb_data);
+		return tpm2_engine_load_nvkey(e, ppkey, key, ui, cb_data);
 	}
 
-	if (bio)
-		bf = bio;
-	else
-		bf = BIO_new_file(key_id, "r");
+	bf = BIO_new_file(key_id, "r");
 	if (!bf) {
 		fprintf(stderr, "File %s does not exist or cannot be read\n", key_id); 
 		return 0;
@@ -373,8 +361,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		BIO_seek(bf, 0);
 		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
 		if (!tssl) {
-			if (!bio)
-				BIO_free(bf);
+			BIO_free(bf);
 			if (ppkey)
 				fprintf(stderr, "Failed to parse file %s\n", key_id);
 			return 0;
@@ -390,8 +377,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		policy = tssl->policy;
 	}
 
-	if (!bio)
-		BIO_free(bf);
+	BIO_free(bf);
 
 	if (!ppkey) {
 		TSSLOADABLE_free(tssl);
@@ -575,14 +561,10 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 static EVP_PKEY *tpm2_engine_load_key(ENGINE *e, const char *key_id,
 				      UI_METHOD *ui, void *cb)
 {
-	struct tpm_ui tui = {
-		.ui_method = ui,
-		.pem_cb = NULL,
-	};
 	EVP_PKEY *pkey;
 	int ret;
 
-	ret = tpm2_engine_load_key_core(e, &pkey, key_id, NULL, &tui, cb);
+	ret = tpm2_engine_load_key_core(e, &pkey, key_id, ui, cb);
 	if (ret == 1)
 		return pkey;
 	return NULL;
