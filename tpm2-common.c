@@ -11,6 +11,9 @@
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/ec.h>
+#include <openssl/pem.h>
+#include <openssl/err.h>
+#include <openssl/ui.h>
 
 #define TSSINCLUDE(x) < TSS_INCLUDE/x >
 #include TSSINCLUDE(tss.h)
@@ -20,6 +23,7 @@
 #include TSSINCLUDE(Unmarshal_fp.h)
 
 #include "tpm2-common.h"
+#include "tpm2-asn.h"
 
 struct myTPM2B {
 	UINT16 s;
@@ -913,3 +917,466 @@ int tpm2_get_public_point(TPM2B_ECC_POINT *tpmpt, const EC_GROUP *group,
 
 	return len;
 }
+
+static char *tpm2_get_auth_ui(UI_METHOD *ui_method, char *prompt, void *cb_data)
+{
+	UI *ui = UI_new();
+	/* Max auth size is name algorithm hash length, so this
+	 * is way bigger than necessary */
+	char auth[256], *ret = NULL;
+	int len;
+
+	if (ui_method)
+		UI_set_method(ui, ui_method);
+
+	UI_add_user_data(ui, cb_data);
+
+	if (UI_add_input_string(ui, prompt, UI_INPUT_FLAG_DEFAULT_PWD,
+				auth, 0, sizeof(auth)) == 0) {
+		fprintf(stderr, "UI_add_input_string failed\n");
+		goto out;
+	}
+
+	if (UI_process(ui)) {
+		fprintf(stderr, "UI_process failed\n");
+		goto out;
+	}
+
+	len = strlen(auth);
+	ret = OPENSSL_malloc(len + 1);
+	if (!ret)
+		goto out;
+
+	strcpy(ret, auth);
+
+ out:
+	UI_free(ui);
+
+	return ret;
+}
+
+static char *tpm2_get_auth_pem(char *input_string, void *cb_data)
+{
+	char auth[256], *ret;
+	int len;
+
+	EVP_set_pw_prompt(input_string);
+
+	PEM_def_callback(auth, sizeof(auth), 0, cb_data);
+	EVP_set_pw_prompt(NULL);
+
+	len = strlen(auth);
+	ret = OPENSSL_malloc(len + 1);
+	if (!ret)
+		goto out;
+
+	strcpy(ret, auth);
+
+ out:
+	return ret;
+}
+
+char *tpm2_get_auth(UI_METHOD *ui, char *input_string, void *cb_data)
+{
+	if (ui)
+		return tpm2_get_auth_ui(ui, input_string, cb_data);
+	else
+		return tpm2_get_auth_pem(input_string, cb_data);
+}
+
+static int tpm2_engine_load_key_policy(struct app_data *app_data,
+				       STACK_OF(TSSOPTPOLICY) *st_policy)
+{
+	struct policy_command *command;
+	TSSOPTPOLICY *policy;
+	int i, commands_len;
+
+	app_data->num_commands = sk_TSSOPTPOLICY_num(st_policy);
+	if (app_data->num_commands <= 0)
+		return 1;
+
+	commands_len = sizeof(struct policy_command) * app_data->num_commands;
+	app_data->commands = OPENSSL_malloc(commands_len);
+	if (!app_data->commands)
+		return 0;
+
+	for (i = 0; i < app_data->num_commands; i++) {
+		policy = sk_TSSOPTPOLICY_value(st_policy, i);
+		if (!policy)
+			return 0;
+
+		command = app_data->commands + i;
+		command->code = ASN1_INTEGER_get(policy->CommandCode);
+		command->size = policy->CommandPolicy->length;
+		command->policy = NULL;
+
+		if (!command->size)
+			continue;
+
+		command->policy = OPENSSL_malloc(command->size);
+		if (!command->policy)
+			return 0;
+
+		memcpy(command->policy, policy->CommandPolicy->data,
+		       command->size);
+	}
+
+	return 1;
+}
+
+int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
+			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
+			  const char *srk_auth)
+{
+	BIO *bf;
+	TSSLOADABLE *tssl = NULL;
+	TSSPRIVKEY *tpk = NULL;
+	BYTE *buffer;
+	INT32 size;
+	struct app_data *ad;
+	char oid[128];
+	int empty_auth, version = 0;
+	ASN1_OBJECT *type;
+	ASN1_INTEGER *parent;
+	ASN1_OCTET_STRING *pubkey;
+	STACK_OF(TSSOPTPOLICY) *policy;
+	ASN1_OCTET_STRING *privkey;
+	ASN1_OCTET_STRING *secret = NULL;
+	Import_In iin;
+
+	bf = BIO_new_file(filename, "r");
+	if (!bf) {
+		fprintf(stderr, "File %s does not exist or cannot be read\n",
+			filename); 
+		return 0;
+	}
+
+	tpk = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
+	if (tpk) {
+		version = 1;
+		type = tpk->type;
+		empty_auth = tpk->emptyAuth;
+		parent = tpk->parent;
+		pubkey = tpk->pubkey;
+		privkey = tpk->privkey;
+		policy = tpk->policy;
+		secret = tpk->secret;
+	} else {
+		BIO_seek(bf, 0);
+		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
+		if (!tssl) {
+			BIO_free(bf);
+			fprintf(stderr, "Failed to parse file %s\n", filename);
+			return 0;
+		}
+
+		/* have error from failed TSSPRIVKEY load */
+		ERR_clear_error();
+		type = tssl->type;
+		empty_auth = tssl->emptyAuth;
+		parent = tssl->parent;
+		pubkey = tssl->pubkey;
+		privkey = tssl->privkey;
+		policy = tssl->policy;
+	}
+
+	BIO_free(bf);
+
+	if (OBJ_obj2txt(oid, sizeof(oid), type, 1) == 0) {
+		fprintf(stderr, "Failed to parse object type\n");
+		goto err;
+	}
+
+	if (strcmp(OID_loadableKey, oid) == 0) {
+		if (version != 1) {
+			fprintf(stderr, "New type found in old format key\n");
+			goto err;
+		}
+	} else if (strcmp(OID_OldloadableKey, oid) == 0) {
+		if (version != 0) {
+			fprintf(stderr, "Old type found in new format key\n");
+			goto err;
+		}
+	} else if (strcmp(OID_importableKey, oid) == 0) {
+		if (!secret) {
+			fprintf(stderr, "Importable keys require an encrypted secret\n");
+			goto err;
+		}
+	} else {
+		fprintf(stderr, "Unrecognised object type\n");
+		goto err;
+	}
+
+	ad = OPENSSL_malloc(sizeof(*ad));
+
+	if (!ad) {
+		fprintf(stderr, "Failed to allocate app_data\n");
+		goto err;
+	}
+	memset(ad, 0, sizeof(*ad));
+
+	*app_data = ad;
+
+	ad->version = version;
+	ad->dir = tpm2_set_unique_tssdir();
+
+	if (parent)
+		ad->parent = ASN1_INTEGER_get(parent);
+	else
+		/* older keys have absent parent */
+		ad->parent = TPM_RH_OWNER;
+
+	ad->pub = OPENSSL_malloc(pubkey->length);
+	if (!ad->pub)
+		goto err_free;
+	ad->pub_len = pubkey->length;
+	memcpy(ad->pub, pubkey->data, ad->pub_len);
+
+	buffer = ad->pub;
+	size = ad->pub_len;
+	TPM2B_PUBLIC_Unmarshal(&iin.objectPublic, &buffer, &size, FALSE);
+	ad->name_alg = iin.objectPublic.publicArea.nameAlg;
+
+	if (strcmp(OID_importableKey, oid) == 0) {
+		TPM_HANDLE session;
+		TSS_CONTEXT *tssContext;
+		TPM_RC rc;
+		const char *reason;
+		TPM2B_PRIVATE priv_2b;
+		BYTE *buf;
+		UINT16 written;
+		INT32 size;
+		Import_Out iout;
+
+		rc = tpm2_create(&tssContext, ad->dir);
+		if (rc) {
+			reason="tpm2_create";
+			goto import_err;
+		}
+
+		if ((ad->parent & 0xff000000) == 0x40000000) {
+			tpm2_load_srk(tssContext, &iin.parentHandle,
+				      srk_auth, NULL, ad->parent, 1);
+		} else {
+			iin.parentHandle = ad->parent;
+		}
+		rc = tpm2_get_session_handle(tssContext, &session,
+					     iin.parentHandle,
+					     TPM_SE_HMAC,
+					     iin.objectPublic.publicArea.nameAlg);
+		if (rc) {
+			reason="tpm2_get_session_handle";
+			goto import_err;
+		}
+
+		/* no inner encryption */
+		iin.encryptionKey.t.size = 0;
+		iin.symmetricAlg.algorithm = TPM_ALG_NULL;
+
+		/* for importable keys the private key is actually the
+		 * outer wrapped duplicate structure */
+		buffer = privkey->data;
+		size = privkey->length;
+		TPM2B_PRIVATE_Unmarshal(&iin.duplicate, &buffer, &size);
+
+		buffer = secret->data;
+		size = secret->length;
+		TPM2B_ENCRYPTED_SECRET_Unmarshal(&iin.inSymSeed, &buffer, &size);
+		rc = TSS_Execute(tssContext,
+				 (RESPONSE_PARAMETERS *)&iout,
+				 (COMMAND_PARAMETERS *)&iin,
+				 NULL,
+				 TPM_CC_Import,
+				 session, srk_auth, 0,
+				 TPM_RH_NULL, NULL, 0);
+		if (rc)
+			tpm2_flush_handle(tssContext, session);
+		reason = "TPM2_Import";
+
+	import_err:
+		tpm2_flush_srk(tssContext, iin.parentHandle);
+		TSS_Delete(tssContext);
+		if (rc) {
+			tpm2_error(rc, reason);
+			goto err_free;
+		}
+		buf = priv_2b.t.buffer;
+		size = sizeof(priv_2b.t.buffer);
+		written = 0;
+		TSS_TPM2B_PRIVATE_Marshal(&iout.outPrivate, &written,
+					  &buf, &size);
+		ad->priv = OPENSSL_malloc(written);
+		if (!ad->priv)
+			goto err_free;
+		ad->priv_len = written;
+		memcpy(ad->priv, priv_2b.t.buffer, written);
+	} else {
+		ad->priv = OPENSSL_malloc(privkey->length);
+		if (!ad->priv)
+			goto err_free;
+
+		ad->priv_len = privkey->length;
+		memcpy(ad->priv, privkey->data, ad->priv_len);
+	}
+
+	/* create the new objects to return */
+	*ppkey = tpm2_to_openssl_public(&iin.objectPublic.publicArea);
+	if (!*ppkey) {
+		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
+		goto err_free;
+	}
+
+	if (empty_auth == 0) {
+		ad->auth = tpm2_get_auth(ui, "TPM Key Password: ", cb_data);
+		if (!ad->auth)
+			goto err_free_key;
+	}
+
+	if (!(iin.objectPublic.publicArea.objectAttributes.val &
+	      TPMA_OBJECT_USERWITHAUTH))
+		ad->req_policy_session = 1;
+
+	if (!tpm2_engine_load_key_policy(ad, policy))
+		goto err_free_key;
+
+	TSSLOADABLE_free(tssl);
+	TSSPRIVKEY_free(tpk);
+
+	return 1;
+ err_free_key:
+	EVP_PKEY_free(*ppkey);
+ err_free:
+	*ppkey = NULL;
+
+	tpm2_delete(ad);
+ err:
+	TSSLOADABLE_free(tssl);
+	TSSPRIVKEY_free(tpk);
+
+	return 0;
+}
+
+void tpm2_delete(struct app_data *app_data)
+{
+	int i;
+
+	for (i = 0; i < app_data->num_commands; i++)
+		OPENSSL_free(app_data->commands[i].policy);
+
+	OPENSSL_free(app_data->commands);
+	OPENSSL_free(app_data->priv);
+	OPENSSL_free(app_data->pub);
+
+	tpm2_rm_keyfile(app_data->dir, app_data->parent);
+	/* if key was nv key, flush may not have removed file */
+	tpm2_rm_keyfile(app_data->dir, app_data->key);
+	tpm2_rm_tssdir(app_data->dir);
+
+	OPENSSL_free((void *)app_data->dir);
+
+	OPENSSL_free(app_data);
+}
+
+TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
+			 const char *srk_auth)
+{
+	TSS_CONTEXT *tssContext;
+	Load_In in;
+	Load_Out out;
+	TPM_HANDLE key = 0;
+	TPM_RC rc;
+	BYTE *buffer;
+	INT32 size;
+	TPM_HANDLE session;
+
+	rc = tpm2_create(&tssContext, app_data->dir);
+	if (rc)
+		return 0;
+
+	if (app_data->key) {
+		key = app_data->key;
+		goto out;
+	}
+
+	buffer = app_data->priv;
+	size = app_data->priv_len;
+	TPM2B_PRIVATE_Unmarshal(&in.inPrivate, &buffer, &size);
+
+	buffer = app_data->pub;
+	size = app_data->pub_len;
+	TPM2B_PUBLIC_Unmarshal(&in.inPublic, &buffer, &size, FALSE);
+
+	if ((app_data->parent & 0xff000000) == 0x81000000) {
+		in.parentHandle = app_data->parent;
+	} else {
+		rc = tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL, app_data->parent, app_data->version);
+		if (rc)
+			goto out;
+	}
+	rc = tpm2_get_session_handle(tssContext, &session, in.parentHandle,
+				     TPM_SE_HMAC, app_data->name_alg);
+	if (rc)
+		goto out_flush_srk;
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_Load,
+			 session, srk_auth, 0,
+			 TPM_RH_NULL, NULL, 0);
+	if (rc) {
+		tpm2_error(rc, "TPM2_Load");
+		tpm2_flush_handle(tssContext, session);
+	}
+	else
+		key = out.objectHandle;
+
+ out_flush_srk:
+	tpm2_flush_srk(tssContext, in.parentHandle);
+ out:
+	if (!key)
+		TSS_Delete(tssContext);
+	else
+		*tsscp = tssContext;
+	return key;
+}
+
+void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key)
+{
+	tpm2_flush_handle(tssContext, key);
+
+	TSS_Delete(tssContext);
+}
+
+IMPLEMENT_ASN1_FUNCTIONS(TSSOPTPOLICY)
+IMPLEMENT_ASN1_FUNCTIONS(TSSLOADABLE)
+IMPLEMENT_ASN1_FUNCTIONS(TSSPRIVKEY)
+IMPLEMENT_PEM_write_bio(TSSLOADABLE, TSSLOADABLE, TSSLOADABLE_PEM_STRING, TSSLOADABLE)
+IMPLEMENT_PEM_read_bio(TSSLOADABLE, TSSLOADABLE, TSSLOADABLE_PEM_STRING, TSSLOADABLE)
+IMPLEMENT_PEM_write_bio(TSSPRIVKEY, TSSPRIVKEY, TSSPRIVKEY_PEM_STRING, TSSPRIVKEY)
+IMPLEMENT_PEM_read_bio(TSSPRIVKEY, TSSPRIVKEY, TSSPRIVKEY_PEM_STRING, TSSPRIVKEY)
+
+ASN1_SEQUENCE(TSSOPTPOLICY) = {
+	ASN1_EXP(TSSOPTPOLICY, CommandCode, ASN1_INTEGER, 0),
+	ASN1_EXP(TSSOPTPOLICY, CommandPolicy, ASN1_OCTET_STRING, 1)
+} ASN1_SEQUENCE_END(TSSOPTPOLICY)
+
+ASN1_SEQUENCE(TSSLOADABLE) = {
+	ASN1_SIMPLE(TSSLOADABLE, type, ASN1_OBJECT),
+	ASN1_EXP_OPT(TSSLOADABLE, emptyAuth, ASN1_BOOLEAN, 0),
+	ASN1_EXP_OPT(TSSLOADABLE, parent, ASN1_INTEGER, 1),
+	ASN1_EXP_OPT(TSSLOADABLE, pubkey, ASN1_OCTET_STRING, 2),
+	ASN1_EXP_SEQUENCE_OF_OPT(TSSLOADABLE, policy, TSSOPTPOLICY, 3),
+	ASN1_SIMPLE(TSSLOADABLE, privkey, ASN1_OCTET_STRING)
+} ASN1_SEQUENCE_END(TSSLOADABLE)
+
+ASN1_SEQUENCE(TSSPRIVKEY) = {
+	ASN1_SIMPLE(TSSPRIVKEY, type, ASN1_OBJECT),
+	ASN1_EXP_OPT(TSSPRIVKEY, emptyAuth, ASN1_BOOLEAN, 0),
+	ASN1_EXP_SEQUENCE_OF_OPT(TSSPRIVKEY, policy, TSSOPTPOLICY, 1),
+	ASN1_EXP_OPT(TSSPRIVKEY, secret, ASN1_OCTET_STRING, 2),
+	ASN1_SIMPLE(TSSPRIVKEY, parent, ASN1_INTEGER),
+	ASN1_SIMPLE(TSSPRIVKEY, pubkey, ASN1_OCTET_STRING),
+	ASN1_SIMPLE(TSSPRIVKEY, privkey, ASN1_OCTET_STRING)
+} ASN1_SEQUENCE_END(TSSPRIVKEY)
+

@@ -10,6 +10,25 @@ struct policy_command {
 	BYTE *policy;
 };
 
+/* structure pointed to by the RSA object's app_data pointer */
+struct app_data {
+	int version;
+	TPM_HANDLE parent;
+	/* if key is in NV memory */
+	TPM_HANDLE key;
+	/* otherwise key is specified by blobs */
+	void *priv;
+	int priv_len;
+	void *pub;
+	int pub_len;
+	char *auth;
+	const char *dir;
+	int req_policy_session;
+	int num_commands;
+	unsigned int name_alg;
+	struct policy_command *commands;
+};
+
 void tpm2_error(TPM_RC rc, const char *reason);
 TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth, TPM2B_PUBLIC *pub, TPM_HANDLE handle, int version);
 void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h);
@@ -36,4 +55,12 @@ void tpm2_rm_tssdir(const char *dir);
 void tpm2_rm_keyfile(const char *dir, TPM_HANDLE key);
 int tpm2_get_public_point(TPM2B_ECC_POINT *tpmpt, const EC_GROUP *group,
 			  const EC_POINT *pt);
+int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
+			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
+			  const char *srk_auth);
+TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
+			 const char *srk_auth);
+void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key);
+void tpm2_delete(struct app_data *app_data);
+char *tpm2_get_auth(UI_METHOD *ui, char *input_string, void *cb_data);
 #endif

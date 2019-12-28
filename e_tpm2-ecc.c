@@ -87,7 +87,7 @@ static TPM_HANDLE tpm2_load_key_from_ecc(const EC_KEY *eck,
 	*num_commands = app_data->num_commands;
 	*nameAlg = app_data->name_alg;
 
-	return tpm2_load_key(tssContext, app_data);
+	return tpm2_load_key(tssContext, app_data, srk_auth);
 }
 
 void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)

@@ -119,7 +119,7 @@ static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
 	*num_commands = app_data->num_commands;
 	*nameAlg = app_data->name_alg;
 
-	return tpm2_load_key(tssContext, app_data);
+	return tpm2_load_key(tssContext, app_data, srk_auth);
 }
 
 void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
