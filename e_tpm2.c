@@ -221,7 +221,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 	}
 
 	rc = tpm2_load_engine_file(key_id, &app_data, &pkey, ui, cb_data,
-				   srk_auth);
+				   srk_auth, 1);
 	if (!rc)
 		return 0;
 

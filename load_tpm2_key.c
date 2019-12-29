@@ -76,21 +76,14 @@ int main(int argc, char **argv)
 {
 	char *filename;
 	TPM_HANDLE nvindex;
-	const char *tssdir;
-	TSSPRIVKEY *tpk;
-	BIO *bf;
 	int option_index, c;
 	int force = 0;
 	TSS_CONTEXT *tssContext;
 	TPM_RC rc;
-	Load_In lin;
-	Load_Out lout;
 	EvictControl_In ein;
-	BYTE *buffer;
-	INT32 size;
 	char *auth = NULL;
-	TPM_HANDLE session, parent;
 	int ret = 1;
+	struct app_data *app_data;
 
 	while (1) {
 		option_index = 0;
@@ -140,72 +133,30 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	bf = BIO_new_file(filename, "r");
-	if (!bf) {
-		fprintf(stderr, "File %s does not exist or cannot be read\n", filename); 
-		exit(1);
-	}
-	tpk = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
-	BIO_free(bf);
-
-	if (!tpk) {
+	ret = tpm2_load_engine_file(filename, &app_data, NULL, NULL, NULL,
+				    auth, 0);
+	if (!ret) {
 		fprintf(stderr, "Failed to parse file %s\n", filename);
 		exit(1);
 	}
-	if (tpk->policy && !force) {
+	if (app_data->commands && !force) {
+		fprintf(stderr, "NUM COMMANDS=%d\n", app_data->num_commands);
 		fprintf(stderr, "Warning: key %s has associated policy\n"
 			"Policy keys are hard to use, specify --force if this is really what you want\n",
 			filename);
+		ret = 1;
 		goto out_free;
 	}
 
-	buffer = tpk->privkey->data;
-	size = tpk->privkey->length;
-	TPM2B_PRIVATE_Unmarshal(&lin.inPrivate, &buffer, &size);
-
-	buffer = tpk->pubkey->data;
-	size = tpk->pubkey->length;
-	TPM2B_PUBLIC_Unmarshal(&lin.inPublic, &buffer, &size, FALSE);
-
-	parent = ASN1_INTEGER_get(tpk->parent);
-	TSSPRIVKEY_free(tpk);
-	tssdir = tpm2_set_unique_tssdir();
-	rc = tpm2_create(&tssContext, tssdir);
-	if (rc) {
-		tpm2_error(rc, "tpm2_create");
-		exit(1);
-	}
-
-	if ((parent & 0xff000000) == 0x81000000) {
-		lin.parentHandle = parent;
-	} else {
-		rc = tpm2_load_srk(tssContext, &lin.parentHandle, auth, NULL,
-				   parent, 1);
-		if (rc)
-			goto out;
-	}
-	rc = tpm2_get_session_handle(tssContext, &session, lin.parentHandle,
-				     TPM_SE_HMAC, TPM_ALG_SHA256);
-	if (rc)
-		goto out_flush_srk;
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&lout,
-			 (COMMAND_PARAMETERS *)&lin,
-			 NULL,
-			 TPM_CC_Load,
-			 session, auth, 0,
-			 TPM_RH_NULL, NULL, 0);
-	if (rc) {
-		tpm2_error(rc, "TPM2_Load");
-		tpm2_flush_handle(tssContext, session);
-	}
- out_flush_srk:
-	tpm2_flush_srk(tssContext, lin.parentHandle);
-	if (rc)
+	ret = tpm2_load_key(&tssContext, app_data, auth);
+	if (!ret) {
+		ret = 1;
 		goto out;
+	};
 
 	ein.auth = TPM_RH_OWNER;
-	ein.objectHandle = lout.objectHandle;
+	ein.objectHandle = ret;
+	ret = 1;		/* set up error return */
 	ein.persistentHandle = nvindex;
 	rc = TSS_Execute(tssContext,
 			 NULL, 
@@ -219,16 +170,12 @@ int main(int argc, char **argv)
 	else
 		ret = 0;
 
-	tpm2_flush_handle(tssContext, lout.objectHandle);
+	tpm2_flush_handle(tssContext, ein.objectHandle);
 
  out:
 	TSS_Delete(tssContext);
-	tpm2_rm_keyfile(tssdir, parent);
-	tpm2_rm_keyfile(tssdir, nvindex);
-	tpm2_rm_tssdir(tssdir);
-	exit(ret);
-
  out_free:
-	TSSPRIVKEY_free(tpk);
-	exit(1);
+	tpm2_rm_keyfile(app_data->dir, nvindex);
+	tpm2_delete(app_data);
+	exit(ret);
 }

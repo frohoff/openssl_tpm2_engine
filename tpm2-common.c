@@ -1026,7 +1026,7 @@ static int tpm2_engine_load_key_policy(struct app_data *app_data,
 
 int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
-			  const char *srk_auth)
+			  const char *srk_auth, int get_key_auth)
 {
 	BIO *bf;
 	TSSLOADABLE *tssl = NULL;
@@ -1220,13 +1220,15 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	}
 
 	/* create the new objects to return */
-	*ppkey = tpm2_to_openssl_public(&iin.objectPublic.publicArea);
-	if (!*ppkey) {
-		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
-		goto err_free;
+	if (ppkey) {
+		*ppkey = tpm2_to_openssl_public(&iin.objectPublic.publicArea);
+		if (!*ppkey) {
+			fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
+			goto err_free;
+		}
 	}
 
-	if (empty_auth == 0) {
+	if (empty_auth == 0 && get_key_auth) {
 		ad->auth = tpm2_get_auth(ui, "TPM Key Password: ", cb_data);
 		if (!ad->auth)
 			goto err_free_key;
@@ -1244,7 +1246,8 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 
 	return 1;
  err_free_key:
-	EVP_PKEY_free(*ppkey);
+	if (ppkey)
+		EVP_PKEY_free(*ppkey);
  err_free:
 	*ppkey = NULL;
 
