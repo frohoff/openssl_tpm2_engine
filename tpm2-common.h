@@ -4,6 +4,10 @@
 #define	T2_AES_KEY_BITS		128
 #define T2_AES_KEY_BYTES	(T2_AES_KEY_BITS/8)
 
+/* for use as a TPM_RC return type to indicate this is
+ * not a TPM error, so don't process the rc as one */
+#define NOT_TPM_ERROR (0xffffffff)
+
 struct policy_command {
 	TPM_CC code;
 	INT32 size;
@@ -63,4 +67,13 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key);
 void tpm2_delete(struct app_data *app_data);
 char *tpm2_get_auth(UI_METHOD *ui, char *input_string, void *cb_data);
+TPM_HANDLE tpm2_get_parent(const char *pstr);
+int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
+		       BYTE *privkey, int privkey_len, int empty_auth,
+		       TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk,
+		       int version, TPM2B_ENCRYPTED_SECRET *secret);
+TPM_RC tpm2_parse_policy_file(const char *policy_file,
+			      STACK_OF(TSSOPTPOLICY) *sk,
+			      char *auth, TPMT_HA *digest);
+void tpm2_free_policy(STACK_OF(TSSOPTPOLICY) *sk);
 #endif

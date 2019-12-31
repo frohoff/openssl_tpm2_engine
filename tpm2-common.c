@@ -7,6 +7,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <ctype.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/mman.h>
 
 #include <openssl/asn1.h>
 #include <openssl/evp.h>
@@ -23,8 +29,8 @@
 #include TSSINCLUDE(tsscryptoh.h)
 #include TSSINCLUDE(Unmarshal_fp.h)
 
-#include "tpm2-common.h"
 #include "tpm2-asn.h"
+#include "tpm2-common.h"
 
 struct myTPM2B {
 	UINT16 s;
@@ -1359,6 +1365,229 @@ void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key)
 	tpm2_flush_handle(tssContext, key);
 
 	TSS_Delete(tssContext);
+}
+
+TPM_HANDLE tpm2_get_parent(const char *pstr)
+{
+	TPM_HANDLE p;
+
+	if (strcmp(pstr, "owner") == 0)
+		p = TPM_RH_OWNER;
+	else if (strcmp(pstr, "platform") == 0)
+		p = TPM_RH_PLATFORM;
+	else if (strcmp(pstr, "endorsement") == 0)
+		p = TPM_RH_ENDORSEMENT;
+	else if (strcmp(pstr, "null") == 0)
+		p = TPM_RH_NULL;
+	else
+		p = strtoul(pstr, NULL, 16);
+
+	if (((p & 0xff000000) == 0x40000000) &&
+	    (p == TPM_RH_OWNER ||
+	     p == TPM_RH_PLATFORM ||
+	     p == TPM_RH_ENDORSEMENT ||
+	     p == TPM_RH_NULL))
+		return p;
+	else if ((p & 0xff000000) == 0x81000000)
+		return p;
+
+	return 0;
+}
+
+int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
+		       BYTE *privkey, int privkey_len, int empty_auth,
+		       TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk,
+		       int version, TPM2B_ENCRYPTED_SECRET *secret)
+{
+	union {
+		TSSLOADABLE tssl;
+		TSSPRIVKEY tpk;
+	} k;
+	BIO *outb;
+
+	/* clear structure so as not to have to set optional parameters */
+	memset(&k, 0, sizeof(k));
+	if ((outb = BIO_new_file(file, "w")) == NULL) {
+                fprintf(stderr, "Error opening file for write: %s\n", file);
+		return 1;
+	}
+	if (version == 0) {
+		k.tssl.type = OBJ_txt2obj(OID_OldloadableKey, 1);
+		k.tssl.emptyAuth = empty_auth;
+		k.tssl.parent = ASN1_INTEGER_new();
+		ASN1_INTEGER_set(k.tssl.parent, parent);
+
+		k.tssl.pubkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tssl.pubkey, pubkey, pubkey_len);
+		k.tssl.privkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tssl.privkey, privkey, privkey_len);
+		k.tssl.policy = sk;
+
+		PEM_write_bio_TSSLOADABLE(outb, &k.tssl);
+	} else {
+		if (secret) {
+			k.tpk.type = OBJ_txt2obj(OID_importableKey, 1);
+			k.tpk.secret = ASN1_OCTET_STRING_new();
+			ASN1_STRING_set(k.tpk.secret, secret->t.secret,
+					secret->t.size);
+		} else {
+			k.tpk.type = OBJ_txt2obj(OID_loadableKey, 1);
+		}
+		k.tpk.emptyAuth = empty_auth;
+		k.tpk.parent = ASN1_INTEGER_new();
+		ASN1_INTEGER_set(k.tpk.parent, parent);
+
+		k.tpk.pubkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tpk.pubkey, pubkey, pubkey_len);
+		k.tpk.privkey = ASN1_OCTET_STRING_new();
+		ASN1_STRING_set(k.tpk.privkey, privkey, privkey_len);
+		k.tpk.policy = sk;
+
+		PEM_write_bio_TSSPRIVKEY(outb, &k.tpk);
+	}
+
+	BIO_free(outb);
+	return 0;
+}
+
+/* from lib/hexdump.c (Linux kernel) */
+int hex_to_bin(char ch)
+{
+	if ((ch >= '0') && (ch <= '9'))
+		return ch - '0';
+	ch = tolower(ch);
+	if ((ch >= 'a') && (ch <= 'f'))
+		return ch - 'a' + 10;
+	return -1;
+}
+
+int hex2bin(unsigned char *dst, const char *src, size_t count)
+{
+	while (count--) {
+		int hi = hex_to_bin(*src++);
+		int lo = hex_to_bin(*src++);
+
+		if ((hi < 0) || (lo < 0))
+			return -1;
+
+		*dst++ = (hi << 4) | lo;
+	}
+	return 0;
+}
+
+TPM_RC tpm2_parse_policy_file(const char *policy_file,
+			      STACK_OF(TSSOPTPOLICY) *sk,
+			      char *auth, TPMT_HA *digest)
+{
+	struct stat st;
+	char *data, *data_ptr;
+	unsigned char buf[2048];
+	unsigned char *buf_ptr;
+	TSSOPTPOLICY *policy = NULL;
+	INT32 buf_len;
+	TPM_CC code;
+	TPM_RC rc = NOT_TPM_ERROR;
+	int fd, policy_auth_value = 0;
+
+	if (stat(policy_file, &st) == -1) {
+		fprintf(stderr, "File %s cannot be accessed\n", policy_file);
+		return rc;
+	}
+
+	fd = open(policy_file, O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "File %s cannot be opened\n", policy_file);
+		return rc;
+	}
+
+	data = mmap(NULL, st.st_size, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE, fd, 0);
+	if (!data) {
+		fprintf(stderr, "mmap() failed\n");
+		goto out;
+	}
+
+	while ((data_ptr = strsep(&data, "\n"))) {
+		TPMT_HA hash_digest;
+		unsigned char *hash = (unsigned char *)hash_digest.digest.tssmax;
+		INT32 hash_len;
+
+		buf_ptr = buf;
+		buf_len = strlen(data_ptr) / 2;
+		if (buf_len > sizeof(buf)) {
+			rc = NOT_TPM_ERROR;
+			fprintf(stderr, "line too long\n");
+			goto out_munmap;
+		}
+
+		if (!buf_len)
+			break;
+
+		rc = hex2bin(buf, data_ptr, buf_len);
+		if (rc < 0) {
+			rc = NOT_TPM_ERROR;
+			fprintf(stderr, "hex2bin() failed\n");
+			goto out_munmap;
+		}
+
+		rc = TPM_CC_Unmarshal(&code, &buf_ptr, &buf_len);
+		if (rc) {
+			fprintf(stderr, "TPM_CC_Unmarshal() failed\n");
+			goto out_munmap;
+		}
+
+		if (code == TPM_CC_PolicyCounterTimer) {
+			/* for a countertimer, the policy is a hash of the hash */
+			hash_digest.hashAlg = digest->hashAlg;
+			hash_len = TSS_GetDigestSize(digest->hashAlg);
+			TSS_Hash_Generate(&hash_digest, buf_len, buf_ptr, 0, NULL);
+			hash = hash_digest.digest.tssmax;
+		} else {
+			hash = buf_ptr;
+			hash_len = buf_len;
+		}
+
+		rc = TSS_Hash_Generate(digest,
+				       TSS_GetDigestSize(digest->hashAlg),
+				       (uint8_t *)&digest->digest,
+				       /* the command code */
+				       4, buf_ptr - 4,
+				       hash_len, hash, 0, NULL);
+		if (rc) {
+			fprintf(stderr, "TSS_Hash_Generate() failed\n");
+			goto out_munmap;
+		}
+
+		if (code == TPM_CC_PolicyAuthValue)
+			policy_auth_value = 1;
+
+		policy = TSSOPTPOLICY_new();
+		ASN1_INTEGER_set(policy->CommandCode, code);
+		ASN1_STRING_set(policy->CommandPolicy, buf_ptr, buf_len);
+		sk_TSSOPTPOLICY_push(sk, policy);
+	}
+
+	if (auth && !policy_auth_value) {
+		rc = NOT_TPM_ERROR;
+		fprintf(stderr, "PolicyAuthValue command is required\n");
+	}
+
+out_munmap:
+	munmap(data, st.st_size);
+out:
+	close(fd);
+	return rc;
+}
+
+void tpm2_free_policy(STACK_OF(TSSOPTPOLICY) *sk)
+{
+	TSSOPTPOLICY *policy;
+
+	if (sk)
+		while ((policy = sk_TSSOPTPOLICY_pop(sk)))
+			TSSOPTPOLICY_free(policy);
+
+	sk_TSSOPTPOLICY_free(sk);
 }
 
 IMPLEMENT_ASN1_FUNCTIONS(TSSOPTPOLICY)
