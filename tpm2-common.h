@@ -14,9 +14,17 @@ struct policy_command {
 	BYTE *policy;
 };
 
+enum tpm2_type {
+	TPM2_NONE = -1,		/* no defined type yet */
+	TPM2_LEGACY = 0,
+	TPM2_LOADABLE = 1,
+	TPM2_IMPORTABLE = 2,
+	TPM2_SEALED = 3,
+};
+
 /* structure pointed to by the RSA object's app_data pointer */
 struct app_data {
-	int version;
+	enum tpm2_type type;
 	TPM_HANDLE parent;
 	/* if key is in NV memory */
 	TPM_HANDLE key;

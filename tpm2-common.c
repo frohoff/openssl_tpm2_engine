@@ -239,7 +239,7 @@ void tpm2_error(TPM_RC rc, const char *reason)
 }
 
 
-TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy, int version)
+TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy, enum tpm2_type type)
 {
 	TPM_RC rc;
 	CreatePrimary_In in;
@@ -271,7 +271,7 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TP
 		TPMA_OBJECT_USERWITHAUTH |
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_RESTRICTED;
-	if (version)
+	if (type != TPM2_LEGACY)
 		in.inPublic.publicArea.objectAttributes.val |=
 			TPMA_OBJECT_FIXEDPARENT |
 			TPMA_OBJECT_FIXEDTPM;
@@ -1042,7 +1042,8 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	INT32 size;
 	struct app_data *ad;
 	char oid[128];
-	int empty_auth, version = 0;
+	int empty_auth;
+	enum tpm2_type tpm2_type = TPM2_NONE;
 	ASN1_OBJECT *type;
 	ASN1_INTEGER *parent;
 	ASN1_OCTET_STRING *pubkey;
@@ -1065,7 +1066,6 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		tpk = ASN1_item_d2i_bio(ASN1_ITEM_rptr(TSSPRIVKEY), bf, NULL);
 	}
 	if (tpk) {
-		version = 1;
 		type = tpk->type;
 		empty_auth = tpk->emptyAuth;
 		parent = tpk->parent;
@@ -1074,6 +1074,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		policy = tpk->policy;
 		secret = tpk->secret;
 	} else {
+		tpm2_type = TPM2_LEGACY;
 		BIO_seek(bf, 0);
 		tssl = PEM_read_bio_TSSLOADABLE(bf, NULL, NULL, NULL);
 		if (!tssl) {
@@ -1100,12 +1101,13 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	}
 
 	if (strcmp(OID_loadableKey, oid) == 0) {
-		if (version != 1) {
+		if (tpm2_type != TPM2_NONE) {
 			fprintf(stderr, "New type found in old format key\n");
 			goto err;
 		}
+		tpm2_type = TPM2_LOADABLE;
 	} else if (strcmp(OID_OldloadableKey, oid) == 0) {
-		if (version != 0) {
+		if (tpm2_type != TPM2_LEGACY) {
 			fprintf(stderr, "Old type found in new format key\n");
 			goto err;
 		}
@@ -1114,6 +1116,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			fprintf(stderr, "Importable keys require an encrypted secret\n");
 			goto err;
 		}
+		tpm2_type = TPM2_IMPORTABLE;
 	} else {
 		fprintf(stderr, "Unrecognised object type\n");
 		goto err;
@@ -1133,7 +1136,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 
 	*app_data = ad;
 
-	ad->version = version;
+	ad->type = tpm2_type;
 	ad->dir = tpm2_set_unique_tssdir();
 
 	if (parent)
@@ -1328,7 +1331,7 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 	if ((app_data->parent & 0xff000000) == 0x81000000) {
 		in.parentHandle = app_data->parent;
 	} else {
-		rc = tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL, app_data->parent, app_data->version);
+		rc = tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL, app_data->parent, app_data->type);
 		if (rc)
 			goto out;
 	}
