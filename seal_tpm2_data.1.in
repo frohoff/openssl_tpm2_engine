@@ -1,0 +1,18 @@
+[name]
+seal_tpm2_data - seal a blob of data for a TPM
+
+[description]
+
+Used to create a sealed blob of data which can be unsealed via the
+TPM.  Possible uses for this blob of data include as a symmetric key,
+which is the use in the linux kernel trusted key infrastructure.
+
+[examples]
+
+Create a sealed data blob to the storage parent (owner hierarchy)
+
+    echo somedatatoseal | seal_tpm2_key -p owner seal.tpm
+
+Unseal the data
+
+    unseal_tpm2_key seal.tpm

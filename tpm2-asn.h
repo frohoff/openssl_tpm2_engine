@@ -98,7 +98,7 @@ typedef struct {
 
 #define OID_loadableKey			"2.23.133.10.1.3"
 #define OID_importableKey		"2.23.133.10.1.4"
-
+#define OID_sealedData			"2.23.133.10.1.5"
 
 /* This is the PEM guard tag */
 #define TSSLOADABLE_PEM_STRING "TSS2 KEY BLOB"

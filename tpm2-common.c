@@ -1117,6 +1117,8 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			goto err;
 		}
 		tpm2_type = TPM2_IMPORTABLE;
+	} else if (strcmp(OID_sealedData, oid) == 0){
+		tpm2_type = TPM2_SEALED;
 	} else {
 		fprintf(stderr, "Unrecognised object type\n");
 		goto err;
@@ -1300,7 +1302,7 @@ void tpm2_delete(struct app_data *app_data)
 }
 
 TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
-			 const char *srk_auth)
+			 const char *srk_auth, uint32_t *psrk)
 {
 	TSS_CONTEXT *tssContext;
 	Load_In in;
@@ -1349,17 +1351,21 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 	if (rc) {
 		tpm2_error(rc, "TPM2_Load");
 		tpm2_flush_handle(tssContext, session);
-	}
-	else
+	} else {
 		key = out.objectHandle;
+	}
 
  out_flush_srk:
-	tpm2_flush_srk(tssContext, in.parentHandle);
+	if (key && psrk)
+		*psrk = in.parentHandle;
+	else
+		tpm2_flush_srk(tssContext, in.parentHandle);
  out:
 	if (!key)
 		TSS_Delete(tssContext);
 	else
 		*tsscp = tssContext;
+
 	return key;
 }
 
@@ -1428,7 +1434,9 @@ int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 
 		PEM_write_bio_TSSLOADABLE(outb, &k.tssl);
 	} else {
-		if (secret) {
+		if (version == 2) {
+			k.tpk.type = OBJ_txt2obj(OID_sealedData, 1);
+		} else if (secret) {
 			k.tpk.type = OBJ_txt2obj(OID_importableKey, 1);
 			k.tpk.secret = ASN1_OCTET_STRING_new();
 			ASN1_STRING_set(k.tpk.secret, secret->t.secret,

@@ -19,6 +19,8 @@ ltmain.sh
 missing
 create_tpm2_key
 load_tpm2_key
+seal_tpm2_data
+unseal_tpm2_data
 test-driver
 tests/*.log
 tests/*.trs

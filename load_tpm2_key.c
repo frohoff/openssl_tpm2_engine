@@ -148,7 +148,7 @@ int main(int argc, char **argv)
 		goto out_free;
 	}
 
-	ret = tpm2_load_key(&tssContext, app_data, auth);
+	ret = tpm2_load_key(&tssContext, app_data, auth, NULL);
 	if (!ret) {
 		ret = 1;
 		goto out;

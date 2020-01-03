@@ -1,0 +1,18 @@
+[name]
+unseal_tpm2_data - unseal a blob of data using a TPM
+
+[description]
+
+Once a sealed data blob has been created, it may only be unsealed by
+the TPM for which it was created.  This command attempts that unseal
+operation
+
+[examples]
+
+Create a sealed data blob to the storage parent (owner hierarchy)
+
+    echo "somedatatoseal" seal_tpm2_key -a -k passw0rd -p owner seal.tpm
+
+Unseal the data
+
+    unseal_tpm2_key -k passw0rd seal.tpm

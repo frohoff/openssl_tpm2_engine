@@ -1,14 +1,16 @@
 EXTRA_DIST = README openssl.cnf.sample
 
 if NATIVE_BUILD
-EXTRA_DIST += create_tpm2_key.1 load_tpm2_key.1
-man1_MANS = create_tpm2_key.1 load_tpm2_key.1
+EXTRA_DIST += create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
+	unseal_tpm2_data.1
+man1_MANS = create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
+	unseal_tpm2_data.1
 
 CLEANFILES = $(man1_MANS)
 endif
 
 openssl_engine_LTLIBRARIES=libtpm2.la
-bin_PROGRAMS=create_tpm2_key load_tpm2_key
+bin_PROGRAMS=create_tpm2_key load_tpm2_key seal_tpm2_data unseal_tpm2_data
 openssl_enginedir=@enginesdir@
 
 libtpm2_la_LDFLAGS= -no-undefined -avoid-version
@@ -23,6 +25,14 @@ create_tpm2_key_CFLAGS=${DEPS_CFLAGS} -Werror
 load_tpm2_key_SOURCES=load_tpm2_key.c tpm2-common.c
 load_tpm2_key_LDADD=${DEPS_LIBS}
 load_tpm2_key_CFLAGS=${DEPS_CFLAGS} -Werror
+
+seal_tpm2_data_SOURCES=seal_tpm2_data.c tpm2-common.c
+seal_tpm2_data_LDADD=${DEPS_LIBS}
+seal_tpm2_data_CFLAGS=${DEPS_CFLAGS} -Werror
+
+unseal_tpm2_data_SOURCES=unseal_tpm2_data.c tpm2-common.c
+unseal_tpm2_data_LDADD=${DEPS_LIBS}
+unseal_tpm2_data_CFLAGS=${DEPS_CFLAGS} -Werror
 
 $(builddir)/%.1: $(srcdir)/%.1.in $(top_builddir)/%
 	$(HELP2MAN) --no-info -i $< -o $@ $(top_builddir)/$*

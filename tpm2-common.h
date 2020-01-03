@@ -71,7 +71,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
 			  const char *srk_auth, int get_key_auth);
 TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
-			 const char *srk_auth);
+			 const char *srk_auth, uint32_t *psession);
 void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key);
 void tpm2_delete(struct app_data *app_data);
 char *tpm2_get_auth(UI_METHOD *ui, char *input_string, void *cb_data);
