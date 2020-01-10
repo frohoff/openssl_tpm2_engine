@@ -1107,6 +1107,10 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		goto err;
 	}
 
+	if (empty_auth == -1)
+		/* not present means auth is not empty */
+		empty_auth = 0;
+
 	ad = OPENSSL_malloc(sizeof(*ad));
 
 	if (!ad) {
