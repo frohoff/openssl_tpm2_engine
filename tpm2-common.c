@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <openssl/asn1.h>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
 #include <openssl/ec.h>
@@ -1052,6 +1053,11 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	}
 
 	tpk = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
+	if (!tpk) {
+		BIO_seek(bf, 0);
+		ERR_clear_error();
+		tpk = ASN1_item_d2i_bio(ASN1_ITEM_rptr(TSSPRIVKEY), bf, NULL);
+	}
 	if (tpk) {
 		version = 1;
 		type = tpk->type;
