@@ -8,6 +8,7 @@ TESTS = fail_connect.sh \
 	wrap_tpm_key.sh \
 	check_wrap_auth.sh \
 	check_old_keys.sh \
+	check_der.sh \
 	create_ecc.sh \
 	wrap_ecc.sh \
 	wrap_generic_ecc.sh \
@@ -28,6 +29,6 @@ AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
 	export TPM_INTERFACE_TYPE OPENSSL_CONF srcdir;
 TEST_EXTENSIONS = .sh
 
-CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin
+CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der
 clean-local:
 	rm -fr testdir
