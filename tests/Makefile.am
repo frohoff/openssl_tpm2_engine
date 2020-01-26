@@ -21,6 +21,7 @@ TESTS = fail_connect.sh \
 	check_importable.sh \
 	check_rsa_oaep_pss.sh \
 	restricted_parent.sh \
+	seal_unseal.sh \
 	stop_sw_tpm.sh
 
 AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
@@ -29,6 +30,6 @@ AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
 	export TPM_INTERFACE_TYPE OPENSSL_CONF srcdir;
 TEST_EXTENSIONS = .sh
 
-CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der
+CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der seal.*
 clean-local:
 	rm -fr testdir
