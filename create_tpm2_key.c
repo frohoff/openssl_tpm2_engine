@@ -19,6 +19,7 @@
 #include <openssl/pem.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
+#include <openssl/pkcs12.h>
 #include <openssl/rand.h>
 
 #define TSSINCLUDE(x) < TSS_INCLUDE/x >
@@ -85,7 +86,9 @@ usage(char *argv0)
 		"\t                              platform, storage, null or endorsement\n"
 		"\t                              respectively\n"
 		"\t-v, --version                 print package version\n"
-		"\t-w, --wrap <file>             wrap an existing openssl PEM key\n"
+		"\t-w, --wrap <file>             wrap an existing openssl PEM key. <file> can\n"
+		"                                be in either PKCS12 or OpenSSL standard PEM\n"
+		"                                private key form (PKCS1 or PKCS8)\n"
 		"\t-k, --password <pwd>          use this password instead of prompting\n"
 		"\t-r, --rsa                     create an RSA key (the default)\n"
 		"\t-e, --ecc <curve>             Create an ECC key using the specified curve.\n"
@@ -385,6 +388,7 @@ openssl_read_key(char *filename)
 {
         BIO *b = NULL;
 	EVP_PKEY *pkey;
+	PKCS12 *p12;
 
         b = BIO_new_file(filename, "r");
         if (b == NULL) {
@@ -392,10 +396,41 @@ openssl_read_key(char *filename)
                 return NULL;
         }
 
+	p12 = d2i_PKCS12_bio(b, NULL);
+	if (p12) {
+		const char *pass;
+		char buf[PEM_BUFSIZE];
+		if (PKCS12_verify_mac(p12, "", 0) || PKCS12_verify_mac(p12, NULL, 0)) {
+			pass = "";
+		} else {
+			int len;
+
+			len = PEM_def_callback(buf, sizeof(buf), 0, NULL);
+			if (len < 0) {
+				fprintf(stderr, "Getting password for pkcs12 failed.\n");
+				openssl_print_errors();
+				goto out;
+			}
+			buf[len] = '\0';
+			pass = buf;
+		}
+		PKCS12_parse(p12, pass, &pkey, NULL, NULL);
+		if (!pkey) {
+			fprintf(stderr, "pkcs12 parsing failure.\n");
+			openssl_print_errors();
+		}
+		goto out;
+	}
+
+	/* must be plain PEM private key, so reset everything */
+	ERR_clear_error();
+	BIO_reset(b);
+
         if ((pkey = PEM_read_bio_PrivateKey(b, NULL, PEM_def_callback, NULL)) == NULL) {
                 fprintf(stderr, "Reading key %s from disk failed.\n", filename);
                 openssl_print_errors();
         }
+ out:
 	BIO_free(b);
 
         return pkey;

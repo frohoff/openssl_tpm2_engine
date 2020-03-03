@@ -12,6 +12,7 @@ TESTS = fail_connect.sh \
 	create_ecc.sh \
 	wrap_ecc.sh \
 	wrap_generic_ecc.sh \
+	wrap_pkcs12.sh \
 	derive_ecc.sh \
 	create_non_tpm_keys.sh \
 	da_check.sh \
