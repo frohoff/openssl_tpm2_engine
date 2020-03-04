@@ -3,6 +3,8 @@
 
  Author: James Bottomley <James.Bottomley@HansenPartnership.com>
 
+ Mailing List: openssl-tpm2-engine@groups.io
+
 
 ABOUT
 
@@ -15,7 +17,11 @@ http://ibmswtpm.sourceforge.net/ibmtss2.html
 
 Prebuilt binaries for a lot of distributions on the Open SUSE Build Service
 
-https://build.opensuse.org/package/show/home:jejb1:TPM/tss2
+https://build.opensuse.org/package/show/home:jejb1:TPM/ibmtss
+
+You can also find this package and a range of other TPM tools built at
+
+https://build.opensuse.org/package/show/home:jejb1:TPM
 
 BUILDING
 
@@ -39,6 +45,7 @@ RUNNING
 		-w|--wrap [file]   wrap an existing openssl PEM key
 		-c|--key-policy [file] TPM key policy
 
+  For full options see the command help.
 
   Key auth: Default=none. If -a is specified, you will be prompted on the
 command line using OpenSSL for a passphrase. 
