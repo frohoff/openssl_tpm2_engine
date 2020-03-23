@@ -1,10 +1,9 @@
-a=$(which tpm_server)
-if [ $? -ne 0 ]; then
+if [ -z "${TPMSERVER}" -o ! -x ${TPMSERVER} ]; then
     exit 1;
 fi
 # remove any prior TPM contents
 rm -f NVChip h*.bin
-${a} > /dev/null 2>&1  &
+${TPMSERVER} > /dev/null 2>&1  &
 pid=$!
 echo ${pid} > tpm_server.pid
 ##

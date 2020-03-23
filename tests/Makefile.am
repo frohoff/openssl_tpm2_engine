@@ -25,10 +25,16 @@ TESTS = fail_connect.sh \
 	seal_unseal.sh \
 	stop_sw_tpm.sh
 
+fail_connect.sh: tpm_server_found
+
+tpm_server_found:
+	@if [ -z "$(TPMSERVER)" ]; then echo "ERROR: Can't run tests, no tpm server is found"; exit 1; fi
+
 AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; \
 	srcdir=$(abs_srcdir); \
-	OPENSSL_CONF=$(abs_srcdir)/openssl.cnf \
-	export TPM_INTERFACE_TYPE OPENSSL_CONF srcdir;
+	OPENSSL_CONF=$(abs_srcdir)/openssl.cnf; \
+	TPMSERVER=$(TPMSERVER); \
+	export TPM_INTERFACE_TYPE OPENSSL_CONF srcdir TPMSERVER;
 TEST_EXTENSIONS = .sh
 
 CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der seal.*

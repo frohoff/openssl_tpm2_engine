@@ -102,6 +102,7 @@ AC_CHECK_HEADER([tss2/tss.h],[AC_DEFINE(TSS_INCLUDE,tss2)],
 	AC_CHECK_HEADER([ibmtss/tss.h],[AC_DEFINE(TSS_INCLUDE,ibmtss)],
 	   AC_MSG_ERROR([No TSS2 include directory found])))
 
+AC_PATH_PROG(TPMSERVER, tpm_server,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
 CFLAGS="$CFLAGS -Wall"
 SHREXT=$shrext_cmds
 AC_SUBST(CFLAGS)
@@ -114,6 +115,10 @@ cat <<EOF
 
 CFLAGS:				${CFLAGS}
 openssl engines directory:	${enginesdir}
+swtpm for testing:		${TPMSERVER}
 
 EOF
 
+if test -z "${TPMSERVER}"; then
+   AC_MSG_WARN([Software TPM  not found, engine will build but can't be tested])
+fi
