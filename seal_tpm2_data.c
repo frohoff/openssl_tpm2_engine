@@ -95,7 +95,7 @@ int main(int argc, char **argv)
 	TPM_RC rc;
 	TSS_CONTEXT *tssContext;
 	const char *dir;
-	const char *reason;
+	const char *reason = ""; /* gcc 4.8.5 gives spurious uninitialized warning without this */
 	TPMT_HA digest;
 	uint32_t sizeInBytes;
 	TPM_HANDLE authHandle;
