@@ -1,5 +1,6 @@
 #ifndef _TPM2_COMMON_H
 #define _TPM2_COMMON_H
+#include "tpm2-asn.h"
 
 #define	T2_AES_KEY_BITS		128
 #define T2_AES_KEY_BYTES	(T2_AES_KEY_BITS/8)

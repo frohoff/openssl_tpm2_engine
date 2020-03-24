@@ -10,6 +10,7 @@
 #define _TPM2_ASN_H
 
 #include <openssl/asn1t.h>
+#include <openssl/pem.h>
 
 /*
  * Define the format of policy commands required for TPM enhanced authorization.
@@ -25,6 +26,7 @@ typedef struct {
 } TSSOPTPOLICY;
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
+DECLARE_STACK_OF(TSSOPTPOLICY);
 #define sk_TSSOPTPOLICY_new_null() SKM_sk_new_null(TSSOPTPOLICY)
 #define sk_TSSOPTPOLICY_push(sk, policy) SKM_sk_push(TSSOPTPOLICY, sk, policy)
 #define sk_TSSOPTPOLICY_pop(sk) SKM_sk_pop(TSSOPTPOLICY, sk)
