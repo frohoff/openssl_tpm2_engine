@@ -10,6 +10,7 @@ TESTS = fail_connect.sh \
 	check_old_keys.sh \
 	check_der.sh \
 	create_ecc.sh \
+	create_nonopenssl_ecc.sh \
 	wrap_ecc.sh \
 	wrap_generic_ecc.sh \
 	wrap_pkcs12.sh \
