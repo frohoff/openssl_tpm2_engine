@@ -726,6 +726,7 @@ int tpm2_get_ecc_group(EC_KEY *eck, TPMI_ECC_CURVE curveID)
 	if (!g)
 		goto err;
 
+	EC_GROUP_set_asn1_flag(g, 0);
 	P = EC_POINT_new(g);
 	if (!P)
 		goto err;
