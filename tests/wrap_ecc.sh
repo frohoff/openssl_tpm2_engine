@@ -13,7 +13,19 @@ for curve in $(${bindir}/create_tpm2_key --list-curves); do
 	continue
     fi
     echo "Checking curve ${curve}"
-    openssl ecparam -genkey -name ${curve} > tmp.param && \
+    openssl ecparam -param_enc named_curve -genkey -name ${curve} > tmp.param && \
+    openssl genpkey -paramfile tmp.param -out key.priv && \
+    ${bindir}/create_tpm2_key -p 81000001 -w key.priv key.tpm && \
+    openssl req -new -x509 -subj '/CN=test/' -key key.tpm -engine tpm2 -keyform engine -out tmp.crt && \
+    openssl verify -CAfile tmp.crt -check_ss_sig tmp.crt || \
+    exit 1
+done
+for curve in $(${bindir}/create_tpm2_key --list-curves); do
+    if openssl ecparam -name ${curve} 2>&1 | grep 'unknown curve'; then
+	continue
+    fi
+    echo "Checking curve ${curve}"
+    openssl ecparam -param_enc explicit -genkey -name ${curve} > tmp.param && \
     openssl genpkey -paramfile tmp.param -out key.priv && \
     ${bindir}/create_tpm2_key -p 81000001 -w key.priv key.tpm && \
     openssl req -new -x509 -subj '/CN=test/' -key key.tpm -engine tpm2 -keyform engine -out tmp.crt && \
