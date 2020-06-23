@@ -28,7 +28,7 @@ echo "00080009" >> policy.txt
 # 4. verify the message through the public key
 ##
 ${bindir}/create_tpm2_key key.tpm -a -k paSSW0RD -c policy.txt && \
-openssl rsa -engine tpm2 -inform engine -passin pass:paSSW0RD -in key.tpm -pubout -out key.pub && \
+openssl rsa -engine tpm2 -inform engine -pubin -in key.tpm -pubout -out key.pub && \
 echo "policy counter timer" | openssl rsautl -sign -passin pass:paSSW0RD -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && \
 openssl rsautl -verify -in tmp.msg -inkey key.pub -pubin || exit 1
 
