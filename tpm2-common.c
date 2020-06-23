@@ -1356,7 +1356,8 @@ static int tpm2_engine_load_key_policy(struct app_data *app_data,
 
 int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
-			  const char *srk_auth, int get_key_auth)
+			  const char *srk_auth, int get_key_auth,
+			  int public_only)
 {
 	BIO *bf;
 	TSSLOADABLE *tssl = NULL;
@@ -1481,6 +1482,19 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	TPM2B_PUBLIC_Unmarshal(&iin.objectPublic, &buffer, &size, FALSE);
 	ad->name_alg = iin.objectPublic.publicArea.nameAlg;
 
+	/* create the new objects to return */
+	if (ppkey) {
+		*ppkey = tpm2_to_openssl_public(&iin.objectPublic.publicArea);
+		if (!*ppkey) {
+			fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
+			goto err_free;
+		}
+		if (public_only) {
+			tpm2_delete(ad);
+			goto out;
+		}
+	}
+
 	if (strcmp(OID_importableKey, oid) == 0) {
 		TPM_HANDLE session;
 		TSS_CONTEXT *tssContext;
@@ -1542,7 +1556,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		TSS_Delete(tssContext);
 		if (rc) {
 			tpm2_error(rc, reason);
-			goto err_free;
+			goto err_free_key;
 		}
 		buf = priv_2b.t.buffer;
 		size = sizeof(priv_2b.t.buffer);
@@ -1551,25 +1565,16 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 					  &buf, &size);
 		ad->priv = OPENSSL_malloc(written);
 		if (!ad->priv)
-			goto err_free;
+			goto err_free_key;
 		ad->priv_len = written;
 		memcpy(ad->priv, priv_2b.t.buffer, written);
 	} else {
 		ad->priv = OPENSSL_malloc(privkey->length);
 		if (!ad->priv)
-			goto err_free;
+			goto err_free_key;
 
 		ad->priv_len = privkey->length;
 		memcpy(ad->priv, privkey->data, ad->priv_len);
-	}
-
-	/* create the new objects to return */
-	if (ppkey) {
-		*ppkey = tpm2_to_openssl_public(&iin.objectPublic.publicArea);
-		if (!*ppkey) {
-			fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
-			goto err_free;
-		}
 	}
 
 	if (empty_auth == 0 && get_key_auth) {
@@ -1585,6 +1590,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	if (!tpm2_engine_load_key_policy(ad, policy))
 		goto err_free_key;
 
+ out:
 	TSSLOADABLE_free(tssl);
 	TSSPRIVKEY_free(tpk);
 

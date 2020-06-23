@@ -136,7 +136,7 @@ int main(int argc, char **argv)
 
 	UI_method_set_reader(ui, ui_read);
 	rc = tpm2_load_engine_file(filename, &app_data, NULL,
-				   ui, pass, parent_auth, 1);
+				   ui, pass, parent_auth, 1, 0);
 	if (!rc) {
 		reason = "tpm2_engine_load_file";
 		rc = NOT_TPM_ERROR;

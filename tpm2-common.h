@@ -70,7 +70,8 @@ int tpm2_get_public_point(TPM2B_ECC_POINT *tpmpt, const EC_GROUP *group,
 			  const EC_POINT *pt);
 int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
-			  const char *srk_auth, int get_key_auth);
+			  const char *srk_auth, int get_key_auth,
+			  int public_only);
 TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 			 const char *srk_auth, uint32_t *psession);
 void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key);

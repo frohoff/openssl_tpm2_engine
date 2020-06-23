@@ -114,7 +114,7 @@ void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
 
 static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 				  TPM_HANDLE key,  UI_METHOD *ui,
-				  void *cb_data)
+				  void *cb_data, int public_only)
 {
 	TPMT_PUBLIC p;
 	TSS_CONTEXT *tssContext;
@@ -147,6 +147,9 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	if (!pkey) {
 		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
 		goto err_del;
+	} else if (public_only) {
+		tpm2_delete(app_data);
+		goto out;
 	}
 	app_data->key = key;
 
@@ -182,6 +185,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 
 	tpm2_bind_key_to_engine(pkey, app_data);
 
+ out:
 	*ppkey = pkey;
 	TSS_Delete(tssContext);
 
@@ -197,7 +201,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 
 static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 				     const char *key_id, UI_METHOD *ui,
-				     void *cb_data)
+				     void *cb_data, int public_only)
 {
 	EVP_PKEY *pkey;
 	const int nvkey_len = strlen(nvprefix);
@@ -217,15 +221,17 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 			fprintf(stderr, "nvkey is not an NV index\n");
 			return 0;
 		}
-		return tpm2_engine_load_nvkey(e, ppkey, key, ui, cb_data);
+		return tpm2_engine_load_nvkey(e, ppkey, key, ui,
+					      cb_data, public_only);
 	}
 
 	rc = tpm2_load_engine_file(key_id, &app_data, &pkey, ui, cb_data,
-				   srk_auth, 1);
+				   srk_auth, 1, public_only);
 	if (!rc)
 		return 0;
 
-	tpm2_bind_key_to_engine(pkey, app_data);
+	if (!public_only)
+		tpm2_bind_key_to_engine(pkey, app_data);
 
 	*ppkey = pkey;
 	return 1;
@@ -238,7 +244,19 @@ static EVP_PKEY *tpm2_engine_load_key(ENGINE *e, const char *key_id,
 	EVP_PKEY *pkey;
 	int ret;
 
-	ret = tpm2_engine_load_key_core(e, &pkey, key_id, ui, cb);
+	ret = tpm2_engine_load_key_core(e, &pkey, key_id, ui, cb, 0);
+	if (ret == 1)
+		return pkey;
+	return NULL;
+}
+
+static EVP_PKEY *tpm2_engine_load_pubkey(ENGINE *e, const char *key_id,
+					 UI_METHOD *ui, void *cb)
+{
+	EVP_PKEY *pkey;
+	int ret;
+
+	ret = tpm2_engine_load_key_core(e, &pkey, key_id, ui, cb, 1);
 	if (ret == 1)
 		return pkey;
 	return NULL;
@@ -257,7 +275,7 @@ static int tpm2_bind_helper(ENGINE * e)
 	    !ENGINE_set_init_function(e, tpm2_engine_init) ||
 	    !ENGINE_set_finish_function(e, tpm2_engine_finish) ||
 	    !ENGINE_set_ctrl_function(e, tpm2_engine_ctrl) ||
-	    !ENGINE_set_load_pubkey_function(e, tpm2_engine_load_key) ||
+	    !ENGINE_set_load_pubkey_function(e, tpm2_engine_load_pubkey) ||
 	    !ENGINE_set_load_privkey_function(e, tpm2_engine_load_key) ||
 	    !ENGINE_set_cmd_defns(e, tpm2_cmd_defns) ||
 	    !tpm2_setup_ecc_methods() ||

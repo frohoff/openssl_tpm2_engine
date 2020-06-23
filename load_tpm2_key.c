@@ -134,7 +134,7 @@ int main(int argc, char **argv)
 	}
 
 	ret = tpm2_load_engine_file(filename, &app_data, NULL, NULL, NULL,
-				    auth, 0);
+				    auth, 0, 0);
 	if (!ret) {
 		fprintf(stderr, "Failed to parse file %s\n", filename);
 		exit(1);
