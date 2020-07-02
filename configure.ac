@@ -2,7 +2,7 @@
 # configure.in for the OpenSSL TPM engine project
 #
 
-AC_INIT(openssl-tpm2-engine, 2.4.1, <openssl-tpm2-engine@groups.io>)
+AC_INIT(openssl-tpm2-engine, 2.4.2, <openssl-tpm2-engine@groups.io>)
 AM_INIT_AUTOMAKE([foreign 1.6.3])
 AC_CANONICAL_HOST
 AM_CONDITIONAL(NATIVE_BUILD, test "x$cross_compiling" = "xno")
