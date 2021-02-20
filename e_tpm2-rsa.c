@@ -153,9 +153,11 @@ static int tpm2_rsa_priv_dec(int flen,
 {
 	TPM_RC rc;
 	int rv;
-	RSA_Decrypt_In in;
-	RSA_Decrypt_Out out;
 	TSS_CONTEXT *tssContext;
+	TPM_HANDLE keyHandle;
+	PUBLIC_KEY_RSA_2B cipherText;
+	TPMT_RSA_DECRYPT inScheme;
+	PUBLIC_KEY_RSA_2B message;
 	char *auth;
 	TPM_HANDLE authHandle;
 	TPM_SE sessionType;
@@ -163,11 +165,11 @@ static int tpm2_rsa_priv_dec(int flen,
 	struct policy_command *commands;
 	TPM_ALG_ID nameAlg;
 
-	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
-					      &sessionType, &num_commands,
-					      &commands, &nameAlg);
+	keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
+					   &sessionType, &num_commands,
+					   &commands, &nameAlg);
 
-	if (in.keyHandle == 0) {
+	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
 
 		return -1;
@@ -175,21 +177,20 @@ static int tpm2_rsa_priv_dec(int flen,
 
 	rv = -1;
 	if (padding == RSA_PKCS1_PADDING) {
-		in.inScheme.scheme = TPM_ALG_RSAES;
+		inScheme.scheme = TPM_ALG_RSAES;
 	} else if (padding == RSA_NO_PADDING) {
-		in.inScheme.scheme = TPM_ALG_NULL;
+		inScheme.scheme = TPM_ALG_NULL;
 	} else if (padding == RSA_PKCS1_OAEP_PADDING) {
-		in.inScheme.scheme = TPM_ALG_OAEP;
+		inScheme.scheme = TPM_ALG_OAEP;
 		/* for openssl RSA, the padding is hard coded */
-		in.inScheme.details.oaep.hashAlg = TPM_ALG_SHA1;
+		inScheme.details.oaep.hashAlg = TPM_ALG_SHA1;
 	} else {
 		fprintf(stderr, "Can't process padding type: %d\n", padding);
 		goto out;
 	}
 
-	in.cipherText.t.size = flen;
-	memcpy(in.cipherText.t.buffer, from, flen);
-	in.label.t.size = 0;
+	cipherText.size = flen;
+	memcpy(cipherText.buffer, from, flen);
 
 	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
 				     nameAlg);
@@ -203,13 +204,9 @@ static int tpm2_rsa_priv_dec(int flen,
 			goto out;
 	}
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_RSA_Decrypt,
-			 authHandle, auth, TPMA_SESSION_ENCRYPT,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_RSA_Decrypt(tssContext, keyHandle, &cipherText, &inScheme,
+			      &message, authHandle, auth, TPMA_SESSION_ENCRYPT);
+
 	if (rc) {
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
 		/* failure means auth handle is not flushed */
@@ -217,12 +214,11 @@ static int tpm2_rsa_priv_dec(int flen,
 		goto out;
 	}
  
-	memcpy(to, out.message.t.buffer,
-	       out.message.t.size);
+	memcpy(to, message.buffer, message.size);
 
-	rv = out.message.t.size;
+	rv = message.size;
  out:
-	tpm2_unload_key(tssContext, in.keyHandle);
+	tpm2_unload_key(tssContext, keyHandle);
 	return rv;
 }
 
@@ -234,8 +230,10 @@ static int tpm2_rsa_priv_enc(int flen,
 {
 	TPM_RC rc;
 	int rv, size;
-	RSA_Decrypt_In in;
-	RSA_Decrypt_Out out;
+	TPM_HANDLE keyHandle;
+	PUBLIC_KEY_RSA_2B cipherText;
+	TPMT_RSA_DECRYPT inScheme;
+	PUBLIC_KEY_RSA_2B message;
 	TSS_CONTEXT *tssContext;
 	char *auth;
 	TPM_HANDLE authHandle;
@@ -251,29 +249,28 @@ static int tpm2_rsa_priv_enc(int flen,
 	 * TPM_ALG_NULL, which means no padding check, a decrypt
 	 * operation effectively becomes an encrypt */
 	size = RSA_size(rsa);
-	in.inScheme.scheme = TPM_ALG_NULL;
-	in.cipherText.t.size = size;
-	in.label.t.size = 0;
+	inScheme.scheme = TPM_ALG_NULL;
+	cipherText.size = size;
 
 	/* note: currently openssl doesn't do OAEP signatures and all
 	 * PSS signatures are padded and handled in the RSA layer
 	 * as a no-padding private encryption */
 	if (padding == RSA_PKCS1_PADDING) {
-		RSA_padding_add_PKCS1_type_1(in.cipherText.t.buffer, size,
+		RSA_padding_add_PKCS1_type_1(cipherText.buffer, size,
 					     from, flen);
 	} else if (padding == RSA_NO_PADDING) {
 		/* do nothing, we're already doing a no padding encrypt */
-		memcpy(in.cipherText.t.buffer, from, size);
+		memcpy(cipherText.buffer, from, size);
 	} else {
 		fprintf(stderr, "Can't process padding type: %d\n", padding);
 		return -1;
 	}
 
-	in.keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
-					      &sessionType, &num_commands,
-					      &commands, &nameAlg);
+	keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
+					   &sessionType, &num_commands,
+					   &commands, &nameAlg);
 
-	if (in.keyHandle == 0) {
+	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
 
 		return -1;
@@ -292,13 +289,8 @@ static int tpm2_rsa_priv_enc(int flen,
 			goto out;
 	}
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_RSA_Decrypt,
-			 authHandle, auth, TPMA_SESSION_DECRYPT,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_RSA_Decrypt(tssContext, keyHandle, &cipherText, &inScheme,
+			      &message, authHandle, auth, TPMA_SESSION_DECRYPT);
 
 	if (rc) {
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
@@ -307,13 +299,12 @@ static int tpm2_rsa_priv_enc(int flen,
 		goto out;
 	}
 
-	memcpy(to, out.message.t.buffer,
-	       out.message.t.size);
+	memcpy(to, message.buffer, message.size);
 
-	rv = out.message.t.size;
+	rv = message.size;
 
  out:
-	tpm2_unload_key(tssContext, in.keyHandle);
+	tpm2_unload_key(tssContext, keyHandle);
 
 	return rv;
 }

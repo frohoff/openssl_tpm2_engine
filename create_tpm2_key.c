@@ -690,36 +690,28 @@ TPM_RC wrap_key(TPMT_SENSITIVE *s, const char *password, EVP_PKEY *pkey)
 static void list_curves(void)
 {
 	TSS_CONTEXT *tssContext;
-	GetCapability_In in;
-	GetCapability_Out out;
+	TPMS_CAPABILITY_DATA capabilityData;
 	TPML_ECC_CURVE *c;
 	const char *reason;
 	TPM_RC rc;
 	int i;
 
-	rc = TSS_Create(&tssContext);
+	rc = tpm2_create(&tssContext, NULL);
 	if (rc) {
 		reason = "TSS_Create";
 		goto out_err;
 	}
 
-	in.capability = TPM_CAP_ECC_CURVES;
-	in.property = 0;
-	in.propertyCount = MAX_ECC_CURVES;
+	rc = tpm2_GetCapability(tssContext, TPM_CAP_ECC_CURVES, 0,
+				MAX_ECC_CURVES, NULL, &capabilityData);
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_GetCapability,
-			 TPM_RH_NULL, NULL, 0);
 	if (rc) {
 		reason = "TPM2_GetCapability";
 		goto out_err;
 	}
 	TSS_Delete(tssContext);
 
-	c = (TPML_ECC_CURVE *)&(out.capabilityData.data);
+	c = (TPML_ECC_CURVE *)&(capabilityData.data);
 
 	for (i = 0; i < c->count; i++) {
 		const char *name = tpm2_curve_name_to_text(c->eccCurves[i]);
@@ -757,8 +749,10 @@ void generate_symmetric(TPMT_PUBLIC *pub, TPMT_SENSITIVE *priv)
 	switch (pub->type) {
 	case TPM_ALG_RSA:
 		TSS_Hash_Generate(&digest,
-				  pub->unique.rsa.t.size, pub->unique.rsa.t.buffer,
-				  priv->sensitive.rsa.t.size, priv->sensitive.rsa.t.buffer,
+				  VAL_2B(pub->unique.rsa, size),
+				  VAL_2B(pub->unique.rsa, buffer),
+				  VAL_2B(priv->sensitive.rsa, size),
+				  VAL_2B(priv->sensitive.rsa, buffer),
 				  0, NULL);
 		pub->parameters.rsaDetail.symmetric.algorithm = TPM_ALG_AES;
 		pub->parameters.rsaDetail.symmetric.keyBits.aes = 128;
@@ -766,9 +760,12 @@ void generate_symmetric(TPMT_PUBLIC *pub, TPMT_SENSITIVE *priv)
 		break;
 	case TPM_ALG_ECC:
 		TSS_Hash_Generate(&digest,
-				  pub->unique.ecc.x.t.size, pub->unique.ecc.x.t.buffer,
-				  pub->unique.ecc.y.t.size, pub->unique.ecc.y.t.buffer,
-				  priv->sensitive.ecc.t.size, priv->sensitive.ecc.t.buffer,
+				  VAL_2B(pub->unique.ecc.x, size),
+				  VAL_2B(pub->unique.ecc.x, buffer),
+				  VAL_2B(pub->unique.ecc.y, size),
+				  VAL_2B(pub->unique.ecc.y, buffer),
+				  VAL_2B(priv->sensitive.ecc, size),
+				  VAL_2B(priv->sensitive.ecc, buffer),
 				  0, NULL);
 		pub->parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
 		pub->parameters.eccDetail.symmetric.keyBits.aes = 128;
@@ -778,11 +775,12 @@ void generate_symmetric(TPMT_PUBLIC *pub, TPMT_SENSITIVE *priv)
 		/* impossible */
 		break;
 	}
-	priv->seedValue.b.size = TSS_GetDigestSize(digest.hashAlg);
-	memcpy(priv->seedValue.b.buffer, digest.digest.tssmax, priv->seedValue.b.size);
-	pub->objectAttributes.val |= TPMA_OBJECT_RESTRICTED;
+	VAL_2B(priv->seedValue, size) = TSS_GetDigestSize(digest.hashAlg);
+	memcpy(VAL_2B(priv->seedValue, buffer),
+	       &digest.digest, VAL_2B(priv->seedValue, size));
+	VAL(pub->objectAttributes) |= TPMA_OBJECT_RESTRICTED;
 	/* a restricted key can't sign */
-	pub->objectAttributes.val &= ~TPMA_OBJECT_SIGN;
+	VAL(pub->objectAttributes) &= ~TPMA_OBJECT_SIGN;
 }
 
 int main(int argc, char **argv)
@@ -796,10 +794,14 @@ int main(int argc, char **argv)
 	BYTE pubkey[sizeof(TPM2B_PUBLIC)],privkey[sizeof(TPM2B_PRIVATE)], *buffer;
 	uint16_t pubkey_len, privkey_len;
 	int32_t size, key_size = 0;
-	Import_In iin;
-	Import_Out iout;
-	Create_In cin;
-	Create_Out cout;
+	TPM2B_PUBLIC objectPublic;
+	DATA_2B encryptionKey;
+	PRIVATE_2B duplicate;
+	ENCRYPTED_SECRET_2B inSymSeed;
+	TPMT_SYM_DEF_OBJECT symmetricAlg;
+	TPM2B_SENSITIVE_CREATE inSensitive;
+	TPM2B_PUBLIC outPublic;
+	PRIVATE_2B outPrivate;
 	TPM2B_PUBLIC *pub;
 	PRIVATE_2B *priv;
 	char *key = NULL, *parent_auth = NULL, *import = NULL;
@@ -984,8 +986,8 @@ int main(int argc, char **argv)
 		TPMT_SENSITIVE s;
 
 		/* steal existing private and public areas */
-		pub = &iin.objectPublic;
-		priv = &iout.outPrivate.t;
+		pub = &objectPublic;
+		priv = &outPrivate;
 
 		rc = NOT_TPM_ERROR;
 
@@ -1006,10 +1008,10 @@ int main(int argc, char **argv)
 			goto out_err;
 		}
 		if (policyFilename) {
-			pub->publicArea.objectAttributes.val &=
+			VAL(pub->publicArea.objectAttributes) &=
 				~TPMA_OBJECT_USERWITHAUTH;
 			rc = TSS_TPM2B_Create(
-				&pub->publicArea.authPolicy.b,
+				(TPM2B *)&pub->publicArea.authPolicy,
 				(uint8_t *)&digest.digest, sizeInBytes,
 				sizeof(TPMU_HA));
 			if (rc) {
@@ -1025,7 +1027,7 @@ int main(int argc, char **argv)
 		}
 
 		/* set the NODA flag */
-		pub->publicArea.objectAttributes.val |= noda;
+		VAL(pub->publicArea.objectAttributes) |= noda;
 
 		if (restricted)
 			generate_symmetric(&pub->publicArea, &s);
@@ -1071,36 +1073,34 @@ int main(int argc, char **argv)
 			goto out_flush;
 		}
 
-		iin.parentHandle = phandle;
-
-		rc = RAND_bytes(iin.encryptionKey.t.buffer, T2_AES_KEY_BYTES);
+		rc = RAND_bytes(encryptionKey.buffer, T2_AES_KEY_BYTES);
 		if (!rc) {
 			reason = "Can't get a random AES key for parameter encryption";
 			goto out_flush;
 		}
-		iin.encryptionKey.t.size = T2_AES_KEY_BYTES;
+		encryptionKey.size = T2_AES_KEY_BYTES;
 		/* set random iin.symSeed */
-		iin.inSymSeed.t.size = 0;
-		iin.symmetricAlg.algorithm = TPM_ALG_AES;
-		iin.symmetricAlg.keyBits.aes = T2_AES_KEY_BITS;
-		iin.symmetricAlg.mode.aes = TPM_ALG_CFB;
+		inSymSeed.size = 0;
+		symmetricAlg.algorithm = TPM_ALG_AES;
+		symmetricAlg.keyBits.aes = T2_AES_KEY_BITS;
+		symmetricAlg.mode.aes = TPM_ALG_CFB;
 
 		rc = wrap_key(&s, auth, pkey);
 		if (rc) {
 			reason = "wrap_key";
 			goto out_flush;
 		}
-		rc = openssl_to_tpm_public(&iin.objectPublic, pkey);
+		rc = openssl_to_tpm_public(&objectPublic, pkey);
 		if (rc) {
 			reason = "openssl_to_tpm_public";
 			goto out_flush;
 		}
 
 		if (policyFilename) {
-			iin.objectPublic.publicArea.objectAttributes.val &=
+			VAL(objectPublic.publicArea.objectAttributes) &=
 				~TPMA_OBJECT_USERWITHAUTH;
 			rc = TSS_TPM2B_Create(
-				&iin.objectPublic.publicArea.authPolicy.b,
+				(TPM2B *)&objectPublic.publicArea.authPolicy,
 				(uint8_t *)&digest.digest, sizeInBytes,
 				sizeof(TPMU_HA));
 			if (rc) {
@@ -1110,15 +1110,15 @@ int main(int argc, char **argv)
 		}
 
 		/* set the NODA flag */
-		iin.objectPublic.publicArea.objectAttributes.val |= noda;
+		VAL(objectPublic.publicArea.objectAttributes) |= noda;
 
 		if (restricted)
-			generate_symmetric(&iin.objectPublic.publicArea, &s);
+			generate_symmetric(&objectPublic.publicArea, &s);
 
-		rc = tpm2_innerwrap(&s, &iin.objectPublic.publicArea,
-				    &iin.symmetricAlg,
-				    &iin.encryptionKey.t,
-				    &iin.duplicate.t);
+		rc = tpm2_innerwrap(&s, &objectPublic.publicArea,
+				    &symmetricAlg,
+				    &encryptionKey,
+				    &duplicate);
 		if (rc) {
 			reason = "tpm2_innerwrap";
 			goto out_flush;
@@ -1132,38 +1132,35 @@ int main(int argc, char **argv)
 			goto out_flush;
 		}
 
-		rc = TSS_Execute(tssContext,
-				 (RESPONSE_PARAMETERS *)&iout,
-				 (COMMAND_PARAMETERS *)&iin,
-				 NULL,
-				 TPM_CC_Import,
-				 authHandle, parent_auth, TPMA_SESSION_DECRYPT,
-				 TPM_RH_NULL, NULL, 0);
+		rc = tpm2_Import(tssContext, phandle, &encryptionKey,
+				 &objectPublic, &duplicate, &inSymSeed,
+				 &symmetricAlg, &outPrivate, authHandle,
+				 parent_auth);
 		if (rc) {
 			reason = "TPM2_Import";
 			/* failure means auth handle is not flushed */
 			tpm2_flush_handle(tssContext, authHandle);
 			goto out_flush;
 		}
-		pub = &iin.objectPublic;
-		priv = &iout.outPrivate.t;
+		pub = &objectPublic;
+		priv = &outPrivate;
  	} else {
 		/* create a TPM resident key */
 		if (rsa) {
-			tpm2_public_template_rsa(&cin.inPublic.publicArea);
-			cin.inPublic.publicArea.parameters.rsaDetail.keyBits = key_size;
-			cin.inPublic.publicArea.parameters.rsaDetail.exponent = 0;
-			cin.inPublic.publicArea.unique.rsa.t.size = 0;
+			tpm2_public_template_rsa(&objectPublic.publicArea);
+			objectPublic.publicArea.parameters.rsaDetail.keyBits = key_size;
+			objectPublic.publicArea.parameters.rsaDetail.exponent = 0;
+			VAL_2B(objectPublic.publicArea.unique.rsa, size) = 0;
 
 		} else {
-			tpm2_public_template_ecc(&cin.inPublic.publicArea, ecc);
+			tpm2_public_template_ecc(&objectPublic.publicArea, ecc);
 		}
 
 		if (policyFilename) {
-			cin.inPublic.publicArea.objectAttributes.val &=
+			VAL(objectPublic.publicArea.objectAttributes) &=
 				~TPMA_OBJECT_USERWITHAUTH;
 			rc = TSS_TPM2B_Create(
-				&cin.inPublic.publicArea.authPolicy.b,
+				(TPM2B *)&objectPublic.publicArea.authPolicy,
 				(uint8_t *)&digest.digest, sizeInBytes,
 				sizeof(TPMU_HA));
 			if (rc) {
@@ -1172,30 +1169,27 @@ int main(int argc, char **argv)
 			}
 		}
 
-		cin.inPublic.publicArea.objectAttributes.val |=
+		VAL(objectPublic.publicArea.objectAttributes) |=
 			noda |
 			TPMA_OBJECT_SENSITIVEDATAORIGIN;
 		if (restricted) {
-			cin.inPublic.publicArea.objectAttributes.val |=
+			VAL(objectPublic.publicArea.objectAttributes) |=
 				TPMA_OBJECT_RESTRICTED;
-			cin.inPublic.publicArea.objectAttributes.val &=
+			VAL(objectPublic.publicArea.objectAttributes) &=
 				~TPMA_OBJECT_SIGN;
-			cin.inPublic.publicArea.parameters.asymDetail.symmetric.algorithm = TPM_ALG_AES;
-			cin.inPublic.publicArea.parameters.asymDetail.symmetric.keyBits.aes = 128;
-			cin.inPublic.publicArea.parameters.asymDetail.symmetric.mode.aes = TPM_ALG_CFB;
+			objectPublic.publicArea.parameters.asymDetail.symmetric.algorithm = TPM_ALG_AES;
+			objectPublic.publicArea.parameters.asymDetail.symmetric.keyBits.aes = 128;
+			objectPublic.publicArea.parameters.asymDetail.symmetric.mode.aes = TPM_ALG_CFB;
 		}
 		if (auth) {
 			int len = strlen(auth);
-			memcpy(&cin.inSensitive.sensitive.userAuth.b.buffer,
+			memcpy(&VAL_2B(inSensitive.sensitive.userAuth, buffer),
 			       auth, len);
-			cin.inSensitive.sensitive.userAuth.b.size = len;
+			VAL_2B(inSensitive.sensitive.userAuth, size) = len;
 		} else {
-			cin.inSensitive.sensitive.userAuth.b.size = 0;
+			VAL_2B(inSensitive.sensitive.userAuth, size) = 0;
 		}
-		cin.inSensitive.sensitive.data.t.size = 0;
-		cin.parentHandle = phandle;
-		cin.outsideInfo.t.size = 0;
-		cin.creationPCR.count = 0;
+		VAL_2B(inSensitive.sensitive.data, size) = 0;
 
 		/* use salted parameter encryption to hide the key */
 		rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
@@ -1205,13 +1199,10 @@ int main(int argc, char **argv)
 			goto out_flush;
 		}
 
-		rc = TSS_Execute(tssContext,
-				 (RESPONSE_PARAMETERS *)&cout,
-				 (COMMAND_PARAMETERS *)&cin,
-				 NULL,
-				 TPM_CC_Create,
-				 authHandle, parent_auth, TPMA_SESSION_DECRYPT,
-				 TPM_RH_NULL, NULL, 0);
+		rc = tpm2_Create(tssContext, phandle, &inSensitive,
+				 &objectPublic, &outPrivate, &outPublic,
+				 authHandle, parent_auth);
+
 		if (rc) {
 			reason = "TPM2_Create";
 			/* failure means auth handle is not flushed */
@@ -1219,8 +1210,8 @@ int main(int argc, char **argv)
 			goto out_flush;
 		}
 
-		pub = &cout.outPublic;
-		priv = &cout.outPrivate.t;
+		pub = &outPublic;
+		priv = &outPrivate;
 	}
 	tpm2_flush_srk(tssContext, phandle);
 	TSS_Delete(tssContext);

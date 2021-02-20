@@ -147,23 +147,14 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	}
 	app_data->key = key;
 
-	if (p.objectAttributes.val & TPMA_OBJECT_NODA) {
+	if (VAL(p.objectAttributes) & TPMA_OBJECT_NODA) {
 		/* no DA implications, try an authorization and see
 		 * if NULL is accepted */
-		ReadPublic_In rin;
-		ReadPublic_Out rout;
 		TPM_HANDLE session;
 
-		rin.objectHandle = key;
 		rc = tpm2_get_bound_handle(tssContext, &session, key, NULL);
 		if (rc == TPM_RC_SUCCESS) {
-			rc = TSS_Execute(tssContext,
-					 (RESPONSE_PARAMETERS *)&rout,
-					 (COMMAND_PARAMETERS *)&rin,
-					 NULL,
-					 TPM_CC_ReadPublic,
-					 session, NULL, TPMA_SESSION_ENCRYPT,
-					 TPM_RH_NULL, NULL, 0);
+			rc = tpm2_ReadPublic(tssContext, key, NULL, session);
 			if (rc)
 				tpm2_flush_handle(tssContext, session);
 		}

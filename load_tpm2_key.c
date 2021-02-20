@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 	int force = 0;
 	TSS_CONTEXT *tssContext;
 	TPM_RC rc;
-	EvictControl_In ein;
+	TPM_HANDLE objectHandle;
 	char *auth = NULL;
 	int ret = 1;
 	struct app_data *app_data;
@@ -147,23 +147,15 @@ int main(int argc, char **argv)
 		goto out;
 	};
 
-	ein.auth = TPM_RH_OWNER;
-	ein.objectHandle = ret;
+	objectHandle = ret;
 	ret = 1;		/* set up error return */
-	ein.persistentHandle = nvindex;
-	rc = TSS_Execute(tssContext,
-			 NULL, 
-			 (COMMAND_PARAMETERS *)&ein,
-			 NULL,
-			 TPM_CC_EvictControl,
-			 TPM_RS_PW, NULL, 0,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_EvictControl(tssContext, objectHandle, nvindex);
 	if (rc)
 		tpm2_error(rc, "TPM2_EvictControl");
 	else
 		ret = 0;
 
-	tpm2_flush_handle(tssContext, ein.objectHandle);
+	tpm2_flush_handle(tssContext, objectHandle);
 
  out:
 	TSS_Delete(tssContext);

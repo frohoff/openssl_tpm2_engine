@@ -70,8 +70,8 @@ int main(int argc, char **argv)
 	TPM_RC rc;
 	TSS_CONTEXT *tssContext;
 	const char *reason;
-	Unseal_In uin;
-	Unseal_Out uout;
+	TPM_HANDLE itemHandle;
+	SENSITIVE_DATA_2B outData;
 	uint32_t parent, session;
 	UI_METHOD *ui = UI_create_method("unseal");
 	struct app_data *app_data;
@@ -144,7 +144,7 @@ int main(int argc, char **argv)
 		goto out_free_app_data;
 	}
 
-	uin.itemHandle = rc;
+	itemHandle = rc;
 
 	rc = tpm2_get_session_handle(tssContext, &session, parent,
 				     app_data->req_policy_session ?
@@ -166,24 +166,20 @@ int main(int argc, char **argv)
 		}
 	}
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&uout,
-			 (COMMAND_PARAMETERS *)&uin,
-			 NULL,
-			 TPM_CC_Unseal,
-			 session, app_data->auth, TPMA_SESSION_ENCRYPT,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_Unseal(tssContext, itemHandle, &outData, session,
+			 app_data->auth);
+
 	if (rc) {
 		reason = "TPM2_Unseal";
 	out_flush_session:
 		tpm2_flush_handle(tssContext, session);
 	} else {
-		fwrite(VAL_2B(uout.outData, buffer), 1,
-		       VAL_2B(uout.outData, size), stdout);
+		fwrite(outData.buffer, 1,
+		       outData.size, stdout);
 	}
 
  out_flush_data:
-	tpm2_flush_handle(tssContext, uin.itemHandle);
+	tpm2_flush_handle(tssContext, itemHandle);
  out_free_app_data:
 	TSS_Delete(tssContext);
 	tpm2_delete(app_data);

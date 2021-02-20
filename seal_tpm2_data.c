@@ -93,10 +93,13 @@ int main(int argc, char **argv)
 	uint32_t sizeInBytes;
 	TPM_HANDLE authHandle;
 	STACK_OF(TSSOPTPOLICY) *sk = NULL;
-	Create_In cin;
-	Create_Out cout;
-	TPMS_SENSITIVE_CREATE *s = &cin.inSensitive.sensitive;
-	TPMT_PUBLIC *p = &cin.inPublic.publicArea;
+	TPM2B_SENSITIVE_CREATE inSensitive;
+	TPM2B_PUBLIC inPublic;
+	PRIVATE_2B outPrivate;
+	TPM2B_PUBLIC outPublic;
+
+	TPMS_SENSITIVE_CREATE *s = &inSensitive.sensitive;
+	TPMT_PUBLIC *p = &inPublic.publicArea;
 	BYTE pubkey[sizeof(TPM2B_PUBLIC)];
 	BYTE privkey[sizeof(PRIVATE_2B)];
 	BYTE *buffer;
@@ -237,15 +240,11 @@ int main(int argc, char **argv)
 
 	tpm2_public_template_seal(p);
 
-	cin.parentHandle = phandle;
-	VAL_2B(cin.outsideInfo, size) = 0;
-	cin.creationPCR.count = 0;
-
 	if (policyFilename) {
-		p->objectAttributes.val &=
+		VAL(p->objectAttributes) &=
 			~TPMA_OBJECT_USERWITHAUTH;
 		rc = TSS_TPM2B_Create(
-			&p->authPolicy.b,
+			(TPM2B *)&p->authPolicy,
 			(uint8_t *)&digest.digest, sizeInBytes,
 			sizeof(TPMU_HA));
 		if (rc) {
@@ -279,13 +278,9 @@ int main(int argc, char **argv)
 		goto out_flush;
 	}
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&cout,
-			 (COMMAND_PARAMETERS *)&cin,
-			 NULL,
-			 TPM_CC_Create,
-			 authHandle, parent_auth, TPMA_SESSION_DECRYPT,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_Create(tssContext, phandle, &inSensitive, &inPublic,
+			 &outPrivate, &outPublic, authHandle, parent_auth);
+
 	if (rc) {
 		reason = "TPM2_Create";
 		/* failure means auth handle is not flushed */
@@ -296,12 +291,12 @@ int main(int argc, char **argv)
 	buffer = pubkey;
 	pubkey_len = 0;
 	size = sizeof(pubkey);
-	TSS_TPM2B_PUBLIC_Marshal(&cout.outPublic, &pubkey_len,
+	TSS_TPM2B_PUBLIC_Marshal(&outPublic, &pubkey_len,
 				 &buffer, &size);
 	buffer = privkey;
 	privkey_len = 0;
 	size = sizeof(privkey);
-	TSS_TPM2B_PRIVATE_Marshal(&cout.outPrivate, &privkey_len,
+	TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)&outPrivate, &privkey_len,
 				  &buffer, &size);
 	tpm2_write_tpmfile(filename, pubkey, pubkey_len,
 			   privkey, privkey_len, data_auth == NULL,

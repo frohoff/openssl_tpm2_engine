@@ -122,8 +122,10 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 				  EC_KEY *eck)
 {
 	TPM_RC rc;
-	Sign_In in;
-	Sign_Out out;
+	TPM_HANDLE keyHandle;
+	DIGEST_2B digest;
+	TPMT_SIG_SCHEME inScheme;
+	TPMT_SIGNATURE signature;
 	TSS_CONTEXT *tssContext;
 	char *auth;
 	TPM_HANDLE authHandle;
@@ -138,17 +140,17 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	 * calculate that from the size */
 	switch (dgst_len) {
 	case SHA_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA1;
+		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA1;
 		break;
 	case SHA256_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA256;
+		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA256;
 		break;
 	case SHA384_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA384;
+		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA384;
 		break;
 #ifdef TPM_ALG_SHA512
 	case SHA512_DIGEST_LENGTH:
-		in.inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA512;
+		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA512;
 		break;
 #endif
 	default:
@@ -156,20 +158,17 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 		return NULL;
 	}
 
-	in.keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
-					      &sessionType, &num_commands,
-					      &commands, &nameAlg);
-	if (in.keyHandle == 0) {
+	keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
+					   &sessionType, &num_commands,
+					   &commands, &nameAlg);
+	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
 		return NULL;
 	}
 
-	in.inScheme.scheme = TPM_ALG_ECDSA;
-	in.digest.t.size = dgst_len;
-	memcpy(in.digest.t.buffer, dgst, dgst_len);
-	in.validation.tag = TPM_ST_HASHCHECK;
-	in.validation.hierarchy = TPM_RH_NULL;
-	in.validation.digest.t.size = 0;
+	inScheme.scheme = TPM_ALG_ECDSA;
+	digest.size = dgst_len;
+	memcpy(digest.buffer, dgst, dgst_len);
 
 	sig = NULL;
 	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
@@ -184,13 +183,8 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 			goto out;
 	}
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_Sign,
-			 authHandle, auth, 0,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_Sign(tssContext, keyHandle, &digest, &inScheme, &signature,
+		       authHandle, auth);
 	if (rc) {
 		tpm2_error(rc, "TPM2_Sign");
 		tpm2_flush_handle(tssContext, authHandle);
@@ -201,11 +195,11 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	if (!sig)
 		goto out;
 
-	r = BN_bin2bn(out.signature.signature.ecdsa.signatureR.t.buffer,
-		      out.signature.signature.ecdsa.signatureR.t.size,
+	r = BN_bin2bn(VAL_2B(signature.signature.ecdsa.signatureR, buffer),
+		      VAL_2B(signature.signature.ecdsa.signatureR, size),
 		      NULL);
-	s = BN_bin2bn(out.signature.signature.ecdsa.signatureS.t.buffer,
-		      out.signature.signature.ecdsa.signatureS.t.size,
+	s = BN_bin2bn(VAL_2B(signature.signature.ecdsa.signatureS, buffer),
+		      VAL_2B(signature.signature.ecdsa.signatureS, size),
 		      NULL);
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
@@ -215,7 +209,7 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	ECDSA_SIG_set0(sig, r, s);
 #endif
  out:
-	tpm2_unload_key(tssContext, in.keyHandle);
+	tpm2_unload_key(tssContext, keyHandle);
 	return sig;
 }
 
@@ -223,8 +217,9 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 				const EC_POINT *pt, const EC_KEY *eck)
 {
 	TPM_RC rc;
-	ECDH_ZGen_In in;
-	ECDH_ZGen_Out out;
+	TPM_HANDLE keyHandle;
+	TPM2B_ECC_POINT inPoint;
+	TPM2B_ECC_POINT outPoint;
 	TSS_CONTEXT *tssContext;
 	TPM_HANDLE authHandle;
 	TPM_SE sessionType;
@@ -235,14 +230,14 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	TPM_ALG_ID nameAlg;
 	int ret;
 
-	in.keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
-					      &sessionType, &num_commands,
-					      &commands, &nameAlg);
-	if (in.keyHandle == 0) {
+	keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
+					   &sessionType, &num_commands,
+					   &commands, &nameAlg);
+	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
 		return 0;
 	}
-	len = tpm2_get_public_point(&in.inPoint, EC_KEY_get0_group(eck), pt);
+	len = tpm2_get_public_point(&inPoint, EC_KEY_get0_group(eck), pt);
 	if (!len)
 		return 0;
 
@@ -259,13 +254,8 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 			goto out;
 	}
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_ECDH_ZGen,
-			 authHandle, auth, TPMA_SESSION_ENCRYPT,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_ECDH_ZGen(tssContext, keyHandle, &inPoint, &outPoint,
+			    authHandle, auth);
 	if (rc) {
 		tpm2_error(rc, "TPM2_ECDH_ZGen");
 		tpm2_flush_handle(tssContext, authHandle);
@@ -279,12 +269,12 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	memset(*psec, 0, len);
 
 	/* zero pad the X point */
-	memcpy(*psec + len - out.outPoint.point.x.t.size,
-	       out.outPoint.point.x.t.buffer,
-	       out.outPoint.point.x.t.size);
+	memcpy(*psec + len - VAL_2B(outPoint.point.x, size),
+	       VAL_2B(outPoint.point.x, buffer),
+	       VAL_2B(outPoint.point.x, size));
 	ret = 1;
  out:
-	tpm2_unload_key(tssContext, in.keyHandle);
+	tpm2_unload_key(tssContext, keyHandle);
 	return ret;
 }
 

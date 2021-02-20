@@ -545,65 +545,49 @@ struct tpm2_ECC_Curves tpm2_supported_curves[] = {
 	{ .name = NULL, }
 };
 
-void tpm2_error(TPM_RC rc, const char *reason)
-{
-	const char *msg, *submsg, *num;
-
-	fprintf(stderr, "%s failed with %d\n", reason, rc);
-	TSS_ResponseCode_toString(&msg, &submsg, &num, rc);
-	fprintf(stderr, "%s%s%s\n", msg, submsg, num);
-}
-
-
 TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 		     TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy,
 		     enum tpm2_type type)
 {
 	TPM_RC rc;
-	CreatePrimary_In in;
-	CreatePrimary_Out out;
+	TPM2B_SENSITIVE_CREATE inSensitive;
+	TPM2B_PUBLIC inPublic;
 	TPM_HANDLE session;
 
-	/* SPS owner */
-	in.primaryHandle = hierarchy;
 	if (auth) {
-		in.inSensitive.sensitive.userAuth.t.size = strlen(auth);
-		memcpy(in.inSensitive.sensitive.userAuth.t.buffer, auth, strlen(auth));
+		VAL_2B(inSensitive.sensitive.userAuth, size) = strlen(auth);
+		memcpy(VAL_2B(inSensitive.sensitive.userAuth, buffer), auth, strlen(auth));
 	} else {
-		in.inSensitive.sensitive.userAuth.t.size = 0;
+		VAL_2B(inSensitive.sensitive.userAuth, size) = 0;
 	}
 
 	/* no sensitive date for storage keys */
-	in.inSensitive.sensitive.data.t.size = 0;
-	/* no outside info */
-	in.outsideInfo.t.size = 0;
-	/* no PCR state */
-	in.creationPCR.count = 0;
+	VAL_2B(inSensitive.sensitive.data, size) = 0;
 
 	/* public parameters for an RSA2048 key  */
-	in.inPublic.publicArea.type = TPM_ALG_ECC;
-	in.inPublic.publicArea.nameAlg = TPM_ALG_SHA256;
-	in.inPublic.publicArea.objectAttributes.val =
+	inPublic.publicArea.type = TPM_ALG_ECC;
+	inPublic.publicArea.nameAlg = TPM_ALG_SHA256;
+	VAL(inPublic.publicArea.objectAttributes) =
 		TPMA_OBJECT_NODA |
 		TPMA_OBJECT_SENSITIVEDATAORIGIN |
 		TPMA_OBJECT_USERWITHAUTH |
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_RESTRICTED;
 	if (type != TPM2_LEGACY)
-		in.inPublic.publicArea.objectAttributes.val |=
+		VAL(inPublic.publicArea.objectAttributes) |=
 			TPMA_OBJECT_FIXEDPARENT |
 			TPMA_OBJECT_FIXEDTPM;
 
-	in.inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
-	in.inPublic.publicArea.parameters.eccDetail.symmetric.keyBits.aes = 128;
-	in.inPublic.publicArea.parameters.eccDetail.symmetric.mode.aes = TPM_ALG_CFB;
-	in.inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_NULL;
-	in.inPublic.publicArea.parameters.eccDetail.curveID = TPM_ECC_NIST_P256;
-	in.inPublic.publicArea.parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
+	inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
+	inPublic.publicArea.parameters.eccDetail.symmetric.keyBits.aes = 128;
+	inPublic.publicArea.parameters.eccDetail.symmetric.mode.aes = TPM_ALG_CFB;
+	inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_NULL;
+	inPublic.publicArea.parameters.eccDetail.curveID = TPM_ECC_NIST_P256;
+	inPublic.publicArea.parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
 
-	in.inPublic.publicArea.unique.ecc.x.t.size = 0;
-	in.inPublic.publicArea.unique.ecc.y.t.size = 0;
-	in.inPublic.publicArea.authPolicy.t.size = 0;
+	VAL_2B(inPublic.publicArea.unique.ecc.x, size) = 0;
+	VAL_2B(inPublic.publicArea.unique.ecc.y, size) = 0;
+	VAL_2B(inPublic.publicArea.authPolicy, size) = 0;
 
 	/* use a bound session here because we have no known key objects
 	 * to encrypt a salt to */
@@ -611,25 +595,15 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 	if (rc)
 		return rc;
 
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_CreatePrimary,
-			 session, auth, TPMA_SESSION_DECRYPT,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_CreatePrimary(tssContext, hierarchy, &inSensitive, &inPublic,
+				h, pub, session, auth);
 
 	if (rc) {
 		tpm2_error(rc, "TSS_CreatePrimary");
 		tpm2_flush_handle(tssContext, session);
-		return rc;
 	}
 
-	*h = out.objectHandle;
-	if (pub)
-		*pub = out.outPublic;
-
-	return 0;
+	return rc;
 }
 
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK)
@@ -641,17 +615,10 @@ void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK)
 
 void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h)
 {
-	FlushContext_In in;
-
 	if (!h)
 		return;
 
-	in.flushHandle = h;
-	TSS_Execute(tssContext, NULL, 
-		    (COMMAND_PARAMETERS *)&in,
-		    NULL,
-		    TPM_CC_FlushContext,
-		    TPM_RH_NULL, NULL, 0);
+	tpm2_FlushContext(tssContext, h);
 }
 
 int tpm2_get_ecc_group(EC_KEY *eck, TPMI_ECC_CURVE curveID)
@@ -659,8 +626,7 @@ int tpm2_get_ecc_group(EC_KEY *eck, TPMI_ECC_CURVE curveID)
 	const int nid = tpm2_curve_name_to_nid(curveID);
 	BN_CTX *ctx = NULL;
 	BIGNUM *p, *a, *b, *gX, *gY, *n, *h;
-	ECC_Parameters_In in;
-	ECC_Parameters_Out out;
+	TPMS_ALGORITHM_DETAIL_ECC parameters;
 	TSS_CONTEXT *tssContext = NULL;
 	TPM_RC rc;
 	EC_GROUP *g = NULL;
@@ -680,13 +646,8 @@ int tpm2_get_ecc_group(EC_KEY *eck, TPMI_ECC_CURVE curveID)
 		tpm2_error(rc, "TSS_Create");
 		goto err;
 	}
-	in.curveID = curveID;
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_ECC_Parameters,
-			 TPM_RH_NULL, NULL, 0);
+	rc = tpm2_ECC_Parameters(tssContext, curveID, &parameters);
+
 	TSS_Delete(tssContext);
 
 	if (rc) {
@@ -710,13 +671,13 @@ int tpm2_get_ecc_group(EC_KEY *eck, TPMI_ECC_CURVE curveID)
 	if (!p || !a || !b || !gX || !gY || !n || !h)
 		goto err;
 
-	BN_bin2bn(out.parameters.p.t.buffer, out.parameters.p.t.size, p);
-	BN_bin2bn(out.parameters.a.t.buffer, out.parameters.a.t.size, a);
-	BN_bin2bn(out.parameters.b.t.buffer, out.parameters.b.t.size, b);
-	BN_bin2bn(out.parameters.gX.t.buffer, out.parameters.gX.t.size, gX);
-	BN_bin2bn(out.parameters.gY.t.buffer, out.parameters.gY.t.size, gY);
-	BN_bin2bn(out.parameters.n.t.buffer, out.parameters.n.t.size, n);
-	BN_bin2bn(out.parameters.h.t.buffer, out.parameters.h.t.size, h);
+	BN_bin2bn(VAL_2B(parameters.p, buffer), VAL_2B(parameters.p, size), p);
+	BN_bin2bn(VAL_2B(parameters.a, buffer), VAL_2B(parameters.a, size), a);
+	BN_bin2bn(VAL_2B(parameters.b, buffer), VAL_2B(parameters.a, size), b);
+	BN_bin2bn(VAL_2B(parameters.gX, buffer), VAL_2B(parameters.gX, size), gX);
+	BN_bin2bn(VAL_2B(parameters.gY, buffer), VAL_2B(parameters.gY, size), gY);
+	BN_bin2bn(VAL_2B(parameters.n, buffer), VAL_2B(parameters.n, size), n);
+	BN_bin2bn(VAL_2B(parameters.h, buffer), VAL_2B(parameters.h, size), h);
 
 	g = EC_GROUP_new_curve_GFp(p, a, b, ctx);
 	if (!g)
@@ -759,8 +720,10 @@ static EVP_PKEY *tpm2_to_openssl_public_ecc(TPMT_PUBLIC *pub)
 		goto err_free_eck;
 	if (!tpm2_get_ecc_group(eck, pub->parameters.eccDetail.curveID))
 		goto err_free_pkey;
-	x = BN_bin2bn(pub->unique.ecc.x.t.buffer, pub->unique.ecc.x.t.size, NULL);
-	y = BN_bin2bn(pub->unique.ecc.y.t.buffer, pub->unique.ecc.y.t.size, NULL);
+	x = BN_bin2bn(VAL_2B(pub->unique.ecc.x, buffer),
+		      VAL_2B(pub->unique.ecc.x, size), NULL);
+	y = BN_bin2bn(VAL_2B(pub->unique.ecc.y, buffer),
+		      VAL_2B(pub->unique.ecc.y, size), NULL);
 	EC_KEY_set_public_key_affine_coordinates(eck, x, y);
 	BN_free(y);
 	BN_free(x);
@@ -801,7 +764,8 @@ static EVP_PKEY *tpm2_to_openssl_public_rsa(TPMT_PUBLIC *pub)
 		exp = pub->parameters.rsaDetail.exponent;
 	if (!BN_set_word(e, exp))
 		goto err_free;
-	if (!BN_bin2bn(pub->unique.rsa.t.buffer, pub->unique.rsa.t.size, n))
+	if (!BN_bin2bn(VAL_2B(pub->unique.rsa, buffer),
+		       VAL_2B(pub->unique.rsa, size), n))
 		goto err_free;
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	rsa->n = n;
@@ -842,59 +806,27 @@ EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub)
 TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 		       TPMT_PUBLIC *pub)
 {
-	ReadPublic_In rin;
-	ReadPublic_Out rout;
-	TPM_RC rc;
-
-	rin.objectHandle = handle;
-	rc = TSS_Execute (tssContext,
-			  (RESPONSE_PARAMETERS *)&rout,
-			  (COMMAND_PARAMETERS *)&rin,
-			  NULL,
-			  TPM_CC_ReadPublic,
-			  TPM_RH_NULL, NULL, 0);
-	if (rc) {
-		tpm2_error(rc, "TPM2_ReadPublic");
-		return rc;
-	}
-	if (pub)
-		*pub = rout.outPublic.publicArea;
-
-	return rc;
+	return tpm2_ReadPublic(tssContext, handle, pub, TPM_RH_NULL);
 }
 
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth)
 {
 	TPM_RC rc;
-	StartAuthSession_In in;
-	StartAuthSession_Out out;
-	StartAuthSession_Extra extra;
+	TPMT_SYM_DEF symmetric;
 
-	memset(&in, 0, sizeof(in));
-	memset(&extra, 0 , sizeof(extra));
-	in.bind = bind;
-	extra.bindPassword = auth;
-	in.sessionType = TPM_SE_HMAC;
-	in.authHash = TPM_ALG_SHA256;
-	in.tpmKey = TPM_RH_NULL;
-	in.symmetric.algorithm = TPM_ALG_AES;
-	in.symmetric.keyBits.aes = 128;
-	in.symmetric.mode.aes = TPM_ALG_CFB;
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 (EXTRA_PARAMETERS *)&extra,
-			 TPM_CC_StartAuthSession,
-			 TPM_RH_NULL, NULL, 0);
-	if (rc) {
+	symmetric.algorithm = TPM_ALG_AES;
+	symmetric.keyBits.aes = 128;
+	symmetric.mode.aes = TPM_ALG_CFB;
+
+	rc = tpm2_StartAuthSession(tssContext, TPM_RH_NULL, bind,
+				   TPM_SE_HMAC, &symmetric,
+				   TPM_ALG_SHA256, handle, auth);
+	if (rc)
 		tpm2_error(rc, "TPM2_StartAuthSession");
-		return rc;
-	}
 
-	*handle = out.sessionHandle;
 
-	return TPM_RC_SUCCESS;
+	return rc;
 }
 
 TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
@@ -902,44 +834,24 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			       TPM_ALG_ID name_alg)
 {
 	TPM_RC rc;
-	StartAuthSession_In in;
-	StartAuthSession_Out out;
-	StartAuthSession_Extra extra;
+	TPMT_SYM_DEF symmetric;
 
-	memset(&in, 0, sizeof(in));
-	memset(&extra, 0 , sizeof(extra));
-	in.bind = TPM_RH_NULL;
-	in.sessionType = sessionType;
-	in.authHash = name_alg;
-	in.tpmKey = TPM_RH_NULL;
-	in.symmetric.algorithm = TPM_ALG_AES;
-	in.symmetric.keyBits.aes = 128;
-	in.symmetric.mode.aes = TPM_ALG_CFB;
-	if (salt_key) {
-		/* For the TSS to use a key as salt, it must have
-		 * access to the public part.  It does this by keeping
-		 * key files, but request the public part just to make
-		 * sure*/
-		tpm2_readpublic(tssContext, salt_key,  NULL);
-		/* don't care what rout returns, the purpose of the
-		 * operation was to get the public key parameters into
-		 * the tss so it can construct the salt */
-		in.tpmKey = salt_key;
-	}
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 (EXTRA_PARAMETERS *)&extra,
-			 TPM_CC_StartAuthSession,
-			 TPM_RH_NULL, NULL, 0);
-	if (rc) {
+	/* 0 means no key, which we express as TPM_RH_NULL to the TSS */
+	if (!salt_key)
+		salt_key = TPM_RH_NULL;
+
+	symmetric.algorithm = TPM_ALG_AES;
+	symmetric.keyBits.aes = 128;
+	symmetric.mode.aes = TPM_ALG_CFB;
+
+	rc = tpm2_StartAuthSession(tssContext, salt_key, TPM_RH_NULL,
+				   sessionType, &symmetric, name_alg,
+				   handle, NULL);
+
+	if (rc)
 		tpm2_error(rc, "TPM2_StartAuthSession");
-		return rc;
-	}
 
-	*handle = out.sessionHandle;
-
-	return TPM_RC_SUCCESS;
+	return rc;
 }
 
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
@@ -948,15 +860,12 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 {
 	INT32 size;
 	BYTE *policy;
-	TPM_RC rc = 0, reason_rc = 0;
-	COMMAND_PARAMETERS in;
+	TPM_RC rc, reason_rc = 0;
 	int i;
 	char reason[256];
 	int name_alg_size = TSS_GetDigestSize(name_alg);
 
 	reason[0] = '\0';
-	/* pick a random policy type: they all have the handle first */
-	in.PolicyPCR.policySession = handle;
 
 	for (i = 0; i < num_commands; i++) {
 		size = commands[i].size;
@@ -964,22 +873,31 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 
 		switch (commands[i].code) {
 		case TPM_CC_PolicyPCR: {
-			PolicyPCR_In *ppcrin = &in.PolicyPCR;
+			DIGEST_2B pcrDigest;
+			TPML_PCR_SELECTION pcrs;
 
 			rc = TPML_PCR_SELECTION_Unmarshal(
-				&ppcrin->pcrs, &policy, &size);
-			ppcrin->pcrDigest.b.size = name_alg_size;
-			memcpy(ppcrin->pcrDigest.b.buffer,
+				&pcrs, &policy, &size);
+			if (rc)
+				goto unmarshal_failure;
+			pcrDigest.size = name_alg_size;
+			memcpy(pcrDigest.buffer,
 			       policy, name_alg_size);
 			sprintf(reason, "PCR Mismatch");
 			reason_rc = TPM_RC_VALUE;
 
+			rc = tpm2_PolicyPCR(tssContext, handle,
+					    &pcrDigest, &pcrs);
+
 			break;
 		}
 		case TPM_CC_PolicyAuthValue:
+			rc = tpm2_PolicyAuthValue(tssContext, handle);
 			break;
 		case TPM_CC_PolicyCounterTimer: {
-			PolicyCounterTimer_In *pctin = &in.PolicyCounterTimer;
+			DIGEST_2B operandB;
+			UINT16 offset;
+			TPM_EO operation;
 			BYTE *p_buffer;
 			INT32 p_size;
 			int i, c;
@@ -1001,25 +919,28 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			/* last UINT16 is the operand */
 			p_buffer = policy + size - 2;
 			p_size = 2;
-			TPM_EO_Unmarshal(&pctin->operation, &p_buffer,
-					 &p_size);
+			TPM_EO_Unmarshal(&operation, &p_buffer, &p_size);
 			/* second to last UINT16 is the offset */
 			p_buffer = policy + size - 4;
 			p_size = 2;
-			UINT16_Unmarshal(&pctin->offset, &p_buffer, &p_size);
+			UINT16_Unmarshal(&offset, &p_buffer, &p_size);
 
 			/* and the rest is the OperandB */
-			pctin->operandB.b.size = size - 4;
-			memcpy(pctin->operandB.b.buffer, policy, size - 4);
+			operandB.size = size - 4;
+			memcpy(operandB.buffer, policy, size - 4);
 
 			c = sprintf(reason,
 				    "Counter Timer at offset %d is not %s ",
-				    pctin->offset, operand[pctin->operation]);
+				    offset, operand[operation]);
 			for (i = 0; i < size - 4; i++)
 				c += sprintf(&reason[c], "%02x", policy[i]);
 
 			reason[c] = '\0';
 			reason_rc = TPM_RC_POLICY;
+
+			rc = tpm2_PolicyCounterTimer(tssContext, handle,
+						     &operandB, offset,
+						     operation);
 
 			break;
 		}
@@ -1030,17 +951,6 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			goto out_flush;
 		}
 
-		if (rc) {
-			tpm2_error(rc, "unmarshal");
-			goto out_flush;
-		}
-
-		rc = TSS_Execute(tssContext,
-				NULL,
-				&in,
-				NULL,
-				commands[i].code,
-				TPM_RH_NULL, NULL, 0);
 		if (rc) {
 			TPM_RC check_rc;
 
@@ -1061,6 +971,9 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 	}
 
 	return TPM_RC_SUCCESS;
+
+ unmarshal_failure:
+	tpm2_error(rc, "unmarshal");
 
  out_flush:
 	tpm2_flush_handle(tssContext, handle);
@@ -1209,10 +1122,12 @@ TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir)
 		tpm2_error(rc, "TSS_Create");
 		return rc;
 	}
-	rc = TSS_SetProperty(*tsscp, TPM_DATA_DIR, dir);
-	if (rc) {
-		tpm2_error(rc, "TSS_SetProperty");
-		return rc;
+	if (dir) {
+		rc = TSS_SetProperty(*tsscp, TPM_DATA_DIR, dir);
+		if (rc) {
+			tpm2_error(rc, "TSS_SetProperty");
+			return rc;
+		}
 	}
 
 	return TPM_RC_SUCCESS;
@@ -1236,10 +1151,10 @@ int tpm2_get_public_point(TPM2B_ECC_POINT *tpmpt, const EC_GROUP *group,
 	len--;
 	len >>= 1;
 
-	memcpy(tpmpt->point.x.t.buffer, point + 1, len);
-	tpmpt->point.x.t.size = len;
-	memcpy(tpmpt->point.y.t.buffer, point + 1 + len, len);
-	tpmpt->point.y.t.size = len;
+	memcpy(VAL_2B(tpmpt->point.x, buffer), point + 1, len);
+	VAL_2B(tpmpt->point.x, size) = len;
+	memcpy(VAL_2B(tpmpt->point.y, buffer), point + 1 + len, len);
+	VAL_2B(tpmpt->point.y, size) = len;
 
 	return len;
 }
@@ -1370,7 +1285,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	STACK_OF(TSSOPTPOLICY) *policy;
 	ASN1_OCTET_STRING *privkey;
 	ASN1_OCTET_STRING *secret = NULL;
-	Import_In iin;
+	TPM2B_PUBLIC objectPublic;
 
 	bf = BIO_new_file(filename, "r");
 	if (!bf) {
@@ -1475,12 +1390,12 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 
 	buffer = ad->pub;
 	size = ad->pub_len;
-	TPM2B_PUBLIC_Unmarshal(&iin.objectPublic, &buffer, &size, FALSE);
-	ad->name_alg = iin.objectPublic.publicArea.nameAlg;
+	TPM2B_PUBLIC_Unmarshal(&objectPublic, &buffer, &size, FALSE);
+	ad->name_alg = objectPublic.publicArea.nameAlg;
 
 	/* create the new objects to return */
 	if (ppkey) {
-		*ppkey = tpm2_to_openssl_public(&iin.objectPublic.publicArea);
+		*ppkey = tpm2_to_openssl_public(&objectPublic.publicArea);
 		if (!*ppkey) {
 			fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
 			goto err_free;
@@ -1493,14 +1408,19 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 
 	if (strcmp(OID_importableKey, oid) == 0) {
 		TPM_HANDLE session;
+		TPM_HANDLE parentHandle;
+		DATA_2B encryptionKey;
+		PRIVATE_2B duplicate;
+		ENCRYPTED_SECRET_2B inSymSeed;
+		TPMT_SYM_DEF_OBJECT symmetricAlg;
 		TSS_CONTEXT *tssContext;
 		TPM_RC rc;
 		const char *reason;
 		PRIVATE_2B priv_2b;
+		PRIVATE_2B outPrivate;
 		BYTE *buf;
 		UINT16 written;
 		INT32 size;
-		Import_Out iout;
 
 		rc = tpm2_create(&tssContext, ad->dir);
 		if (rc) {
@@ -1509,46 +1429,44 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		}
 
 		if ((ad->parent & 0xff000000) == 0x40000000) {
-			tpm2_load_srk(tssContext, &iin.parentHandle,
+			tpm2_load_srk(tssContext, &parentHandle,
 				      srk_auth, NULL, ad->parent, 1);
 		} else {
-			iin.parentHandle = ad->parent;
+			parentHandle = ad->parent;
 		}
 		rc = tpm2_get_session_handle(tssContext, &session,
-					     iin.parentHandle,
+					     parentHandle,
 					     TPM_SE_HMAC,
-					     iin.objectPublic.publicArea.nameAlg);
+					     objectPublic.publicArea.nameAlg);
 		if (rc) {
 			reason="tpm2_get_session_handle";
 			goto import_err;
 		}
 
 		/* no inner encryption */
-		iin.encryptionKey.t.size = 0;
-		iin.symmetricAlg.algorithm = TPM_ALG_NULL;
+		encryptionKey.size = 0;
+		symmetricAlg.algorithm = TPM_ALG_NULL;
 
 		/* for importable keys the private key is actually the
 		 * outer wrapped duplicate structure */
 		buffer = privkey->data;
 		size = privkey->length;
-		TPM2B_PRIVATE_Unmarshal(&iin.duplicate, &buffer, &size);
+		TPM2B_PRIVATE_Unmarshal((TPM2B_PRIVATE *)&duplicate,
+					&buffer, &size);
 
 		buffer = secret->data;
 		size = secret->length;
-		TPM2B_ENCRYPTED_SECRET_Unmarshal(&iin.inSymSeed, &buffer, &size);
-		rc = TSS_Execute(tssContext,
-				 (RESPONSE_PARAMETERS *)&iout,
-				 (COMMAND_PARAMETERS *)&iin,
-				 NULL,
-				 TPM_CC_Import,
-				 session, srk_auth, 0,
-				 TPM_RH_NULL, NULL, 0);
+		TPM2B_ENCRYPTED_SECRET_Unmarshal((TPM2B_ENCRYPTED_SECRET *)
+						 &inSymSeed, &buffer, &size);
+		rc = tpm2_Import(tssContext, parentHandle, &encryptionKey,
+				 &objectPublic, &duplicate, &inSymSeed,
+				 &symmetricAlg, &outPrivate, session, srk_auth);
 		if (rc)
 			tpm2_flush_handle(tssContext, session);
 		reason = "TPM2_Import";
 
 	import_err:
-		tpm2_flush_srk(tssContext, iin.parentHandle);
+		tpm2_flush_srk(tssContext, parentHandle);
 		TSS_Delete(tssContext);
 		if (rc) {
 			tpm2_error(rc, reason);
@@ -1557,8 +1475,8 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		buf = priv_2b.buffer;
 		size = sizeof(priv_2b.buffer);
 		written = 0;
-		TSS_TPM2B_PRIVATE_Marshal(&iout.outPrivate, &written,
-					  &buf, &size);
+		TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)&outPrivate,
+					  &written, &buf, &size);
 		ad->priv = OPENSSL_malloc(written);
 		if (!ad->priv)
 			goto err_free_key;
@@ -1579,7 +1497,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			goto err_free_key;
 	}
 
-	if (!(iin.objectPublic.publicArea.objectAttributes.val &
+	if (!(VAL(objectPublic.publicArea.objectAttributes) &
 	      TPMA_OBJECT_USERWITHAUTH))
 		ad->req_policy_session = 1;
 
@@ -1630,8 +1548,9 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 			 const char *srk_auth, uint32_t *psrk)
 {
 	TSS_CONTEXT *tssContext;
-	Load_In in;
-	Load_Out out;
+	PRIVATE_2B inPrivate;
+	TPM2B_PUBLIC inPublic;
+	TPM_HANDLE parentHandle;
 	TPM_HANDLE key = 0;
 	TPM_RC rc;
 	BYTE *buffer;
@@ -1649,42 +1568,37 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 
 	buffer = app_data->priv;
 	size = app_data->priv_len;
-	TPM2B_PRIVATE_Unmarshal(&in.inPrivate, &buffer, &size);
+	TPM2B_PRIVATE_Unmarshal((TPM2B_PRIVATE *)&inPrivate, &buffer, &size);
 
 	buffer = app_data->pub;
 	size = app_data->pub_len;
-	TPM2B_PUBLIC_Unmarshal(&in.inPublic, &buffer, &size, FALSE);
+	TPM2B_PUBLIC_Unmarshal(&inPublic, &buffer, &size, FALSE);
 
 	if ((app_data->parent & 0xff000000) == 0x81000000) {
-		in.parentHandle = app_data->parent;
+		parentHandle = app_data->parent;
 	} else {
-		rc = tpm2_load_srk(tssContext, &in.parentHandle, srk_auth, NULL, app_data->parent, app_data->type);
+		rc = tpm2_load_srk(tssContext, &parentHandle, srk_auth, NULL,
+				   app_data->parent, app_data->type);
 		if (rc)
 			goto out;
 	}
-	rc = tpm2_get_session_handle(tssContext, &session, in.parentHandle,
+	rc = tpm2_get_session_handle(tssContext, &session, parentHandle,
 				     TPM_SE_HMAC, app_data->name_alg);
 	if (rc)
 		goto out_flush_srk;
-	rc = TSS_Execute(tssContext,
-			 (RESPONSE_PARAMETERS *)&out,
-			 (COMMAND_PARAMETERS *)&in,
-			 NULL,
-			 TPM_CC_Load,
-			 session, srk_auth, 0,
-			 TPM_RH_NULL, NULL, 0);
+
+	rc = tpm2_Load(tssContext, parentHandle, &inPrivate, &inPublic,
+		       &key, session, srk_auth);
 	if (rc) {
 		tpm2_error(rc, "TPM2_Load");
 		tpm2_flush_handle(tssContext, session);
-	} else {
-		key = out.objectHandle;
 	}
 
  out_flush_srk:
 	if (key && psrk)
-		*psrk = in.parentHandle;
+		*psrk = parentHandle;
 	else
-		tpm2_flush_srk(tssContext, in.parentHandle);
+		tpm2_flush_srk(tssContext, parentHandle);
  out:
 	if (!key)
 		TSS_Delete(tssContext);
@@ -1845,7 +1759,7 @@ TPM_RC tpm2_parse_policy_file(const char *policy_file,
 
 	while ((data_ptr = strsep(&data, "\n"))) {
 		TPMT_HA hash_digest;
-		unsigned char *hash = (unsigned char *)hash_digest.digest.tssmax;
+		unsigned char *hash = (unsigned char *)&hash_digest.digest;
 		INT32 hash_len;
 
 		buf_ptr = buf;
@@ -1877,7 +1791,7 @@ TPM_RC tpm2_parse_policy_file(const char *policy_file,
 			hash_digest.hashAlg = digest->hashAlg;
 			hash_len = TSS_GetDigestSize(digest->hashAlg);
 			TSS_Hash_Generate(&hash_digest, buf_len, buf_ptr, 0, NULL);
-			hash = hash_digest.digest.tssmax;
+			hash = (unsigned char *)&hash_digest.digest;
 		} else {
 			hash = buf_ptr;
 			hash_len = buf_len;
