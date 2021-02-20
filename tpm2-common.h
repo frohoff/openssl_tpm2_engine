@@ -43,7 +43,8 @@ struct app_data {
 };
 
 void tpm2_error(TPM_RC rc, const char *reason);
-TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth, TPM2B_PUBLIC *pub, TPM_HANDLE handle, int version);
+TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
+		     TPM2B_PUBLIC *pub, TPM_HANDLE handle, int version);
 void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h);
 EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub);
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK);
@@ -81,7 +82,7 @@ TPM_HANDLE tpm2_get_parent(const char *pstr);
 int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		       BYTE *privkey, int privkey_len, int empty_auth,
 		       TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk,
-		       int version, TPM2B_ENCRYPTED_SECRET *secret);
+		       int version, ENCRYPTED_SECRET_2B *secret);
 TPM_RC tpm2_parse_policy_file(const char *policy_file,
 			      STACK_OF(TSSOPTPOLICY) *sk,
 			      char *auth, TPMT_HA *digest);

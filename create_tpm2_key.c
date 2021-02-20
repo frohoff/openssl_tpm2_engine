@@ -22,14 +22,7 @@
 #include <openssl/pkcs12.h>
 #include <openssl/rand.h>
 
-#define TSSINCLUDE(x) < TSS_INCLUDE/x >
-#include TSSINCLUDE(tss.h)
-#include TSSINCLUDE(tssutils.h)
-#include TSSINCLUDE(tssmarshal.h)
-#include TSSINCLUDE(Unmarshal_fp.h)
-#include TSSINCLUDE(tsscrypto.h)
-#include TSSINCLUDE(tsscryptoh.h)
-
+#include "tpm2-tss.h"
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
@@ -115,7 +108,7 @@ openssl_print_errors()
 	ERR_print_errors_fp(stderr);
 }
 
-TPM_RC tpm2_ObjectPublic_GetName(TPM2B_NAME *name,
+TPM_RC tpm2_ObjectPublic_GetName(NAME_2B *name,
 				 TPMT_PUBLIC *tpmtPublic)
 {
 	TPM_RC rc = 0;
@@ -141,12 +134,12 @@ TPM_RC tpm2_ObjectPublic_GetName(TPM2B_NAME *name,
 	}
 	if (rc == 0) {
 		/* copy the digest */
-		memcpy(name->t.name + sizeof(TPMI_ALG_HASH), (uint8_t *)&digest.digest, sizeInBytes);
+		memcpy(name->name + sizeof(TPMI_ALG_HASH), (uint8_t *)&digest.digest, sizeInBytes);
 		/* copy the hash algorithm */
 		TPMI_ALG_HASH nameAlgNbo = htons(tpmtPublic->nameAlg);
-		memcpy(name->t.name, (uint8_t *)&nameAlgNbo, sizeof(TPMI_ALG_HASH));
+		memcpy(name->name, (uint8_t *)&nameAlgNbo, sizeof(TPMI_ALG_HASH));
 		/* set the size */
-		name->t.size = sizeInBytes + sizeof(TPMI_ALG_HASH);
+		name->size = sizeInBytes + sizeof(TPMI_ALG_HASH);
 	}
 	return rc;
 }
@@ -161,12 +154,12 @@ TPM_RC tpm2_ObjectPublic_GetName(TPM2B_NAME *name,
 TPM_RC tpm2_innerwrap(TPMT_SENSITIVE *s,
 		      TPMT_PUBLIC *pub,
 		      TPMT_SYM_DEF_OBJECT *symdef,
-		      TPM2B_DATA *innerkey,
-		      TPM2B_PRIVATE *p)
+		      DATA_2B *innerkey,
+		      PRIVATE_2B *p)
 {
-	BYTE *buf = p->t.buffer;
+	BYTE *buf = p->buffer;
 
-	p->t.size = 0;
+	p->size = 0;
 	memset(p, 0, sizeof(*p));
 
 	/* hard code AES CFB */
@@ -180,7 +173,7 @@ TPM_RC tpm2_innerwrap(TPMT_SENSITIVE *s,
 		int32_t size;
 		unsigned char null_iv[AES_128_BLOCK_SIZE_BYTES];
 		UINT16 bsize, written = 0;
-		TPM2B_NAME name;
+		NAME_2B name;
 
 		/* WARNING: don't use the static null_iv trick here:
 		 * the AES routines alter the passed in iv */
@@ -189,7 +182,7 @@ TPM_RC tpm2_innerwrap(TPMT_SENSITIVE *s,
 		/* reserve space for hash before the encrypted sensitive */
 		bsize = sizeof(digest->size) + hlen;
 		buf += bsize;
-		p->t.size += bsize;
+		p->size += bsize;
 		s2b = (TPM2B *)buf;
 
 		/* marshal the digest size */
@@ -208,24 +201,24 @@ TPM_RC tpm2_innerwrap(TPMT_SENSITIVE *s,
 		TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
 
 		bsize = bsize + sizeof(s2b->size);
-		p->t.size += bsize;
+		p->size += bsize;
 
 		tpm2_ObjectPublic_GetName(&name, pub);
 		/* compute hash of unencrypted marshalled sensitive and
 		 * write to the digest buffer */
 		hash.hashAlg = nalg;
 		TSS_Hash_Generate(&hash, bsize, s2b,
-				  name.t.size, name.t.name,
+				  name.size, name.name,
 				  0, NULL);
 		memcpy(digest->buffer, &hash.digest, hlen);
 
 		/* encrypt hash and sensitive in place */
-		TSS_AES_EncryptCFB(p->t.buffer,
+		TSS_AES_EncryptCFB(p->buffer,
 				   symdef->keyBits.aes,
-				   innerkey->b.buffer,
+				   innerkey->buffer,
 				   null_iv,
-				   p->t.size,
-				   p->t.buffer);
+				   p->size,
+				   p->buffer);
 	} else if (symdef->algorithm == TPM_ALG_NULL) {
 		TPM2B *s2b = (TPM2B *)buf;
 		int32_t size = sizeof(*s);
@@ -239,7 +232,7 @@ TPM_RC tpm2_innerwrap(TPMT_SENSITIVE *s,
 		size = 2;
 		TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
 
-		p->b.size += bsize + sizeof(s2b->size);
+		p->size += bsize + sizeof(s2b->size);
 	} else {
 		printf("Unknown symmetric algorithm\n");
 		return TPM_RC_SYMMETRIC;
@@ -251,15 +244,15 @@ TPM_RC tpm2_innerwrap(TPMT_SENSITIVE *s,
 TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 		      TPMT_SENSITIVE *s,
 		      TPMT_PUBLIC *pub,
-		      TPM2B_PRIVATE *p,
-		      TPM2B_ENCRYPTED_SECRET *enc_secret)
+		      PRIVATE_2B *p,
+		      ENCRYPTED_SECRET_2B *enc_secret)
 {
-	TPM2B_PRIVATE secret, seed;
+	PRIVATE_2B secret, seed;
 	/*  amount of room in the buffer for the integrity TPM2B */
 	const int name_alg_size = TSS_GetDigestSize(pub->nameAlg);
 	const int integrity_skip = name_alg_size + 2;
-	//	BYTE *integrity = p->t.buffer;
-	BYTE *sensitive = p->t.buffer + integrity_skip;
+	//	BYTE *integrity = p->buffer;
+	BYTE *sensitive = p->buffer + integrity_skip;
 	BYTE *buf;
 	TPM2B *t2b;
 	INT32 size;
@@ -272,10 +265,10 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	const EC_GROUP *group;
 	unsigned char aeskey[T2_AES_KEY_BYTES];
 	/* hmac follows namealg, so set to max size */
-	TPM2B_KEY hmackey;
+	KEY_2B hmackey;
 	TPMT_HA hmac;
-	TPM2B_NAME name;
-	TPM2B_DIGEST digest;
+	NAME_2B name;
+	DIGEST_2B digest;
 	unsigned char null_iv[AES_128_BLOCK_SIZE_BYTES];
 	TPM2B null_2b;
 
@@ -292,14 +285,14 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	/* marshal the sensitive into a TPM2B */
 	t2b = (TPM2B *)sensitive;
 	buf = t2b->buffer;
-	size = sizeof(p->t.buffer) - integrity_skip;
+	size = sizeof(p->buffer) - integrity_skip;
 	bsize = 0;
 	TSS_TPMT_SENSITIVE_Marshal(s, &bsize, &buf, &size);
 	buf = (BYTE *)&t2b->size;
 	size = 2;
 	TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
 	/* set the total size of the private entity */
-	p->b.size = bsize + sizeof(UINT16) + integrity_skip;
+	p->size = bsize + sizeof(UINT16) + integrity_skip;
 
 	/* compute the elliptic curve shared (and encrypted) secret */
 	ctx = EVP_PKEY_CTX_new(parent, NULL);
@@ -329,10 +322,10 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 		goto openssl_err;
 	if (EVP_PKEY_derive_set_peer(ctx, parent) != 1)
 		goto openssl_err;
-	ssize = sizeof(secret.t.buffer);
-	if (EVP_PKEY_derive(ctx, secret.b.buffer, &ssize) != 1)
+	ssize = sizeof(secret.buffer);
+	if (EVP_PKEY_derive(ctx, secret.buffer, &ssize) != 1)
 		goto openssl_err;
-	secret.b.size = ssize;
+	secret.size = ssize;
 	EVP_PKEY_CTX_free(ctx);
 
 	tpm2_get_public_point(&pub_pt, group, EC_KEY_get0_public_key(e_parent));
@@ -344,38 +337,38 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	/* now pass the secret through KDFe to get the shared secret
 	 * The size is the size of the parent name algorithm which we
 	 * assume to be sha256 */
-	TSS_KDFE(seed.b.buffer, pub->nameAlg, &secret.b, "DUPLICATE",
-		 &ephemeral_pt.point.x.b, &pub_pt.point.x.b,
+	TSS_KDFE(seed.buffer, pub->nameAlg, (TPM2B *)&secret, "DUPLICATE",
+		 (TPM2B *)&ephemeral_pt.point.x, (TPM2B *)&pub_pt.point.x,
 		 SHA256_DIGEST_LENGTH*8);
-	seed.b.size = SHA256_DIGEST_LENGTH;
+	seed.size = SHA256_DIGEST_LENGTH;
 
 	/* and finally through KDFa to get the aes symmetric encryption key */
 	tpm2_ObjectPublic_GetName(&name, pub);
-	TSS_KDFA(aeskey, pub->nameAlg, &seed.b, "STORAGE", &name.b, &null_2b,
-		 T2_AES_KEY_BITS);
+	TSS_KDFA(aeskey, pub->nameAlg, (TPM2B *)&seed, "STORAGE",
+		 (TPM2B *)&name, &null_2b, T2_AES_KEY_BITS);
 	/* and then the outer HMAC key */
-	hmackey.b.size = name_alg_size;
-	TSS_KDFA(hmackey.b.buffer, pub->nameAlg, &seed.b, "INTEGRITY",
+	hmackey.size = name_alg_size;
+	TSS_KDFA(hmackey.buffer, pub->nameAlg, (TPM2B *)&seed, "INTEGRITY",
 		 &null_2b, &null_2b, name_alg_size * 8);
 	/* OK the ephermeral public point is now the encrypted secret */
 	size = sizeof(ephemeral_pt);
-	buf = enc_secret->b.buffer;
+	buf = enc_secret->secret;
 	TSS_TPM2B_ECC_POINT_Marshal(&ephemeral_pt, &written,
 				    &buf, &size);
-	enc_secret->b.size = written;
+	enc_secret->size = written;
 	memset(null_iv, 0, sizeof(null_iv));
 	TSS_AES_EncryptCFB(sensitive, T2_AES_KEY_BITS, aeskey, null_iv,
-			   p->t.size - integrity_skip, sensitive);
+			   p->size - integrity_skip, sensitive);
 	hmac.hashAlg = pub->nameAlg;
-	TSS_HMAC_Generate(&hmac, &hmackey,
-			  p->t.size - integrity_skip, sensitive,
-			  name.b.size, name.b.buffer,
+	TSS_HMAC_Generate(&hmac, (TPM2B_KEY *)&hmackey,
+			  p->size - integrity_skip, sensitive,
+			  name.size, name.name,
 			  0, NULL);
-	digest.b.size  = name_alg_size;
-	memcpy(digest.b.buffer, &hmac.digest, digest.b.size);
+	digest.size  = name_alg_size;
+	memcpy(digest.buffer, &hmac.digest, digest.size);
 	size = integrity_skip;
-	buf = p->t.buffer;
-	TSS_TPM2B_DIGEST_Marshal(&digest, &written, &buf, &size);
+	buf = p->buffer;
+	TSS_TPM2B_DIGEST_Marshal((TPM2B_DIGEST *)&digest, &written, &buf, &size);
 	return TPM_RC_SUCCESS;
 
  openssl_err:
@@ -464,10 +457,10 @@ void tpm2_public_template_rsa(TPMT_PUBLIC *pub)
 	/* note: all our keys are decrypt only.  This is because
 	 * we use the TPM2_RSA_Decrypt operation for both signing
 	 * and decryption (see e_tpm2.c for details) */
-	pub->objectAttributes.val =
+	VAL(pub->objectAttributes) =
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_USERWITHAUTH;
-	pub->authPolicy.t.size = 0;
+	VAL_2B(pub->authPolicy, size) = 0;
 	pub->parameters.rsaDetail.symmetric.algorithm = TPM_ALG_NULL;
 	pub->parameters.rsaDetail.scheme.scheme = TPM_ALG_NULL;
 }
@@ -479,17 +472,17 @@ void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve)
 	/* note: all our keys are decrypt only.  This is because
 	 * we use the TPM2_RSA_Decrypt operation for both signing
 	 * and decryption (see e_tpm2.c for details) */
-	pub->objectAttributes.val =
+	VAL(pub->objectAttributes) =
 		TPMA_OBJECT_SIGN |
 		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_USERWITHAUTH;
-	pub->authPolicy.t.size = 0;
+	VAL_2B(pub->authPolicy, size) = 0;
 	pub->parameters.eccDetail.symmetric.algorithm = TPM_ALG_NULL;
 	pub->parameters.eccDetail.scheme.scheme = TPM_ALG_NULL;
 	pub->parameters.eccDetail.curveID = curve;
 	pub->parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
-	pub->unique.ecc.x.t.size = 0;
-	pub->unique.ecc.y.t.size = 0;
+	VAL_2B(pub->unique.ecc.x, size) = 0;
+	VAL_2B(pub->unique.ecc.y, size) = 0;
 }
 
 TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
@@ -532,8 +525,10 @@ TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 		goto err;
 	}
 
-	pub->unique.ecc.x.t.size = BN_bn2bin(x, pub->unique.ecc.x.t.buffer);
-	pub->unique.ecc.y.t.size = BN_bn2bin(y, pub->unique.ecc.y.t.buffer);
+	VAL_2B(pub->unique.ecc.x, size) =
+		BN_bn2bin(x, VAL_2B(pub->unique.ecc.x, buffer));
+	VAL_2B(pub->unique.ecc.y, size) =
+		BN_bn2bin(y, VAL_2B(pub->unique.ecc.y, buffer));
 
 	rc = TPM_RC_SUCCESS;
 
@@ -577,7 +572,8 @@ TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 	else
 		pub->parameters.rsaDetail.exponent = exp;
 
-	pub->unique.rsa.t.size = BN_bn2bin(n, pub->unique.rsa.t.buffer);
+	VAL_2B(pub->unique.rsa, size) =
+		BN_bn2bin(n, VAL_2B(pub->unique.rsa, buffer));
 
 	rc = 0;
  err:
@@ -605,7 +601,7 @@ TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey)
 TPM_RC openssl_to_tpm_private_ecc(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
 {
 	const BIGNUM *pk;
-	TPM2B_ECC_PARAMETER *t2becc = &s->sensitive.ecc;
+	ECC_PARAMETER_2B *t2becc = (ECC_PARAMETER_2B *)&s->sensitive.ecc;
 	EC_KEY *eck = EVP_PKEY_get1_EC_KEY(pkey);
 	TPM_RC rc = TPM_RC_KEY;
 
@@ -621,9 +617,9 @@ TPM_RC openssl_to_tpm_private_ecc(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
 		goto out;
 	}
 
-	t2becc->t.size = BN_bn2bin(pk, t2becc->t.buffer);
+	t2becc->size = BN_bn2bin(pk, t2becc->buffer);
 	s->sensitiveType = TPM_ALG_ECC;
-	s->seedValue.b.size = 0;
+	VAL_2B(s->seedValue, size) = 0;
 
 	rc = TPM_RC_SUCCESS;
 
@@ -651,9 +647,9 @@ TPM_RC openssl_to_tpm_private_rsa(TPMT_SENSITIVE *s, EVP_PKEY *pkey)
 		return TPM_RC_ASYMMETRIC;
 
 	s->sensitiveType = TPM_ALG_RSA;
-	s->seedValue.b.size = 0;
+	VAL_2B(s->seedValue, size) = 0;
 
-	t2brsa->t.size = BN_bn2bin(q, t2brsa->t.buffer);
+	VAL_2B_P(t2brsa, size) = BN_bn2bin(q, VAL_2B_P(t2brsa, buffer));
 	return 0;
 }
 
@@ -683,10 +679,10 @@ TPM_RC wrap_key(TPMT_SENSITIVE *s, const char *password, EVP_PKEY *pkey)
 	if (password) {
 		int len = strlen(password);
 
-		memcpy(s->authValue.b.buffer, password, len);
-		s->authValue.b.size = len;
+		memcpy(VAL_2B(s->authValue, buffer), password, len);
+		VAL_2B(s->authValue, size) = len;
 	} else {
-		s->authValue.b.size = 0;
+		VAL_2B(s->authValue, size) = 0;
 	}
 	return TPM_RC_SUCCESS;
 }
@@ -805,7 +801,7 @@ int main(int argc, char **argv)
 	Create_In cin;
 	Create_Out cout;
 	TPM2B_PUBLIC *pub;
-	TPM2B_PRIVATE *priv;
+	PRIVATE_2B *priv;
 	char *key = NULL, *parent_auth = NULL, *import = NULL;
 	TPMI_ECC_CURVE ecc = TPM_ECC_NONE;
 	int rsa = -1;
@@ -816,7 +812,7 @@ int main(int argc, char **argv)
 	int version = 1;
 	uint32_t sizeInBytes;
 	TPMT_HA digest;
-	TPM2B_ENCRYPTED_SECRET secret, *enc_secret = NULL;
+	ENCRYPTED_SECRET_2B secret, *enc_secret = NULL;
 	int restricted = 0;
 
 	OpenSSL_add_all_digests();
@@ -989,7 +985,7 @@ int main(int argc, char **argv)
 
 		/* steal existing private and public areas */
 		pub = &iin.objectPublic;
-		priv = &iout.outPrivate;
+		priv = &iout.outPrivate.t;
 
 		rc = NOT_TPM_ERROR;
 
@@ -1121,8 +1117,8 @@ int main(int argc, char **argv)
 
 		rc = tpm2_innerwrap(&s, &iin.objectPublic.publicArea,
 				    &iin.symmetricAlg,
-				    &iin.encryptionKey,
-				    &iin.duplicate);
+				    &iin.encryptionKey.t,
+				    &iin.duplicate.t);
 		if (rc) {
 			reason = "tpm2_innerwrap";
 			goto out_flush;
@@ -1150,7 +1146,7 @@ int main(int argc, char **argv)
 			goto out_flush;
 		}
 		pub = &iin.objectPublic;
-		priv = &iout.outPrivate;
+		priv = &iout.outPrivate.t;
  	} else {
 		/* create a TPM resident key */
 		if (rsa) {
@@ -1224,7 +1220,7 @@ int main(int argc, char **argv)
 		}
 
 		pub = &cout.outPublic;
-		priv = &cout.outPrivate;
+		priv = &cout.outPrivate.t;
 	}
 	tpm2_flush_srk(tssContext, phandle);
 	TSS_Delete(tssContext);
@@ -1239,7 +1235,7 @@ int main(int argc, char **argv)
 	buffer = privkey;
 	privkey_len = 0;
 	size = sizeof(privkey);
-	TSS_TPM2B_PRIVATE_Marshal(priv, &privkey_len, &buffer, &size);
+	TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)priv, &privkey_len, &buffer, &size);
 	tpm2_write_tpmfile(filename, pubkey, pubkey_len,
 			   privkey, privkey_len, auth == NULL, parent, sk,
 			   version, enc_secret);

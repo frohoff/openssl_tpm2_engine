@@ -16,14 +16,7 @@
 #include <openssl/pem.h>
 #include <openssl/ui.h>
 
-#define TSSINCLUDE(x) < TSS_INCLUDE/x >
-#include TSSINCLUDE(tss.h)
-#include TSSINCLUDE(tssutils.h)
-#include TSSINCLUDE(tssmarshal.h)
-#include TSSINCLUDE(Unmarshal_fp.h)
-#include TSSINCLUDE(tsscrypto.h)
-#include TSSINCLUDE(tsscryptoh.h)
-
+#include "tpm2-tss.h"
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
@@ -47,11 +40,11 @@ static void tpm2_public_template_seal(TPMT_PUBLIC *pub)
 {
 	pub->type = TPM_ALG_KEYEDHASH;
 	pub->nameAlg = name_alg;
-	pub->objectAttributes.val =
+	VAL(pub->objectAttributes) =
 		TPMA_OBJECT_USERWITHAUTH;
-	pub->authPolicy.t.size = 0;
+	VAL_2B(pub->authPolicy, size) = 0;
 	pub->parameters.keyedHashDetail.scheme.scheme = TPM_ALG_NULL;
-	pub->unique.sym.t.size = 0;
+	VAL_2B(pub->unique.sym, size) = 0;
 }
 
 void
@@ -105,7 +98,7 @@ int main(int argc, char **argv)
 	TPMS_SENSITIVE_CREATE *s = &cin.inSensitive.sensitive;
 	TPMT_PUBLIC *p = &cin.inPublic.publicArea;
 	BYTE pubkey[sizeof(TPM2B_PUBLIC)];
-	BYTE privkey[sizeof(TPM2B_PRIVATE)];
+	BYTE privkey[sizeof(PRIVATE_2B)];
 	BYTE *buffer;
 	int32_t size;
 	uint16_t pubkey_len, privkey_len;
@@ -245,7 +238,7 @@ int main(int argc, char **argv)
 	tpm2_public_template_seal(p);
 
 	cin.parentHandle = phandle;
-	cin.outsideInfo.t.size = 0;
+	VAL_2B(cin.outsideInfo, size) = 0;
 	cin.creationPCR.count = 0;
 
 	if (policyFilename) {
@@ -264,17 +257,17 @@ int main(int argc, char **argv)
 	memset(s, 0, sizeof(*s));
 	if (data_auth) {
 		int len = strlen(data_auth);
-		memcpy(s->userAuth.b.buffer, data_auth, len);
-		s->userAuth.b.size = len;
+		memcpy(VAL_2B(s->userAuth, buffer), data_auth, len);
+		VAL_2B(s->userAuth, size) = len;
 	}
-	s->data.t.size = fread(s->data.t.buffer, 1,
-			       MAX_SYM_DATA, stdin);
+	VAL_2B(s->data, size) = fread(VAL_2B(s->data, buffer), 1,
+				      MAX_SYM_DATA, stdin);
 
 	/* set the NODA flag */
-	p->objectAttributes.val |= noda;
+	VAL(p->objectAttributes) |= noda;
 
 	if (nomigrate)
-		p->objectAttributes.val |=
+		VAL(p->objectAttributes) |=
 			TPMA_OBJECT_FIXEDPARENT |
 			TPMA_OBJECT_FIXEDTPM;
 

@@ -16,13 +16,7 @@
 #include <openssl/sha.h>
 #include <openssl/bn.h>
 
-#define TSSINCLUDE(x) < TSS_INCLUDE/x >
-#include TSSINCLUDE(tss.h)
-#include TSSINCLUDE(tssutils.h)
-#include TSSINCLUDE(tssmarshal.h)
-#include TSSINCLUDE(tssresponsecode.h)
-#include TSSINCLUDE(Unmarshal_fp.h)
-
+#include "tpm2-tss.h"
 #include "tpm2-common.h"
 #include "e_tpm2.h"
 

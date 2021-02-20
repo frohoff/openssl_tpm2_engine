@@ -16,14 +16,7 @@
 #include <openssl/pem.h>
 #include <openssl/ui.h>
 
-#define TSSINCLUDE(x) < TSS_INCLUDE/x >
-#include TSSINCLUDE(tss.h)
-#include TSSINCLUDE(tssutils.h)
-#include TSSINCLUDE(tssmarshal.h)
-#include TSSINCLUDE(Unmarshal_fp.h)
-#include TSSINCLUDE(tsscrypto.h)
-#include TSSINCLUDE(tsscryptoh.h)
-
+#include "tpm2-tss.h"
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
@@ -185,7 +178,8 @@ int main(int argc, char **argv)
 	out_flush_session:
 		tpm2_flush_handle(tssContext, session);
 	} else {
-		fwrite(uout.outData.t.buffer, 1, uout.outData.t.size, stdout);
+		fwrite(VAL_2B(uout.outData, buffer), 1,
+		       VAL_2B(uout.outData, size), stdout);
 	}
 
  out_flush_data:

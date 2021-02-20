@@ -22,13 +22,7 @@
 #include <openssl/err.h>
 #include <openssl/ui.h>
 
-#define TSSINCLUDE(x) < TSS_INCLUDE/x >
-#include TSSINCLUDE(tss.h)
-#include TSSINCLUDE(tssresponsecode.h)
-#include TSSINCLUDE(tssmarshal.h)
-#include TSSINCLUDE(tsscryptoh.h)
-#include TSSINCLUDE(Unmarshal_fp.h)
-
+#include "tpm2-tss.h"
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
@@ -561,7 +555,9 @@ void tpm2_error(TPM_RC rc, const char *reason)
 }
 
 
-TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy, enum tpm2_type type)
+TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
+		     TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy,
+		     enum tpm2_type type)
 {
 	TPM_RC rc;
 	CreatePrimary_In in;
@@ -1500,7 +1496,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		TSS_CONTEXT *tssContext;
 		TPM_RC rc;
 		const char *reason;
-		TPM2B_PRIVATE priv_2b;
+		PRIVATE_2B priv_2b;
 		BYTE *buf;
 		UINT16 written;
 		INT32 size;
@@ -1558,8 +1554,8 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			tpm2_error(rc, reason);
 			goto err_free_key;
 		}
-		buf = priv_2b.t.buffer;
-		size = sizeof(priv_2b.t.buffer);
+		buf = priv_2b.buffer;
+		size = sizeof(priv_2b.buffer);
 		written = 0;
 		TSS_TPM2B_PRIVATE_Marshal(&iout.outPrivate, &written,
 					  &buf, &size);
@@ -1567,7 +1563,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		if (!ad->priv)
 			goto err_free_key;
 		ad->priv_len = written;
-		memcpy(ad->priv, priv_2b.t.buffer, written);
+		memcpy(ad->priv, priv_2b.buffer, written);
 	} else {
 		ad->priv = OPENSSL_malloc(privkey->length);
 		if (!ad->priv)
@@ -1735,7 +1731,7 @@ TPM_HANDLE tpm2_get_parent(const char *pstr)
 int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		       BYTE *privkey, int privkey_len, int empty_auth,
 		       TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk,
-		       int version, TPM2B_ENCRYPTED_SECRET *secret)
+		       int version, ENCRYPTED_SECRET_2B *secret)
 {
 	union {
 		TSSLOADABLE tssl;
@@ -1768,8 +1764,8 @@ int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		} else if (secret) {
 			k.tpk.type = OBJ_txt2obj(OID_importableKey, 1);
 			k.tpk.secret = ASN1_OCTET_STRING_new();
-			ASN1_STRING_set(k.tpk.secret, secret->t.secret,
-					secret->t.size);
+			ASN1_STRING_set(k.tpk.secret, secret->secret,
+					secret->size);
 		} else {
 			k.tpk.type = OBJ_txt2obj(OID_loadableKey, 1);
 		}
