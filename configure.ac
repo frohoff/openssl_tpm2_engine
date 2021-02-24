@@ -26,11 +26,6 @@ if test "$test_CFLAGS" != set; then
 	fi
 fi
 
-##
-# ibmtss >= 1234 now requires TPM_POSIX be set
-CFLAGS="$CFLAGS -DTPM_POSIX"
-CPPFLAGS="$CPPFLAGS -DTPM_POSIX"
-
 #if test "${OPENSSL_LIB_DIR+set}" != set; then
 #	OPENSSL_LIB_DIR="/usr/local/ssl/lib"
 #fi
@@ -86,9 +81,19 @@ AC_SUBST(enginesdir)
 
 PKG_CHECK_MODULES([DEPS], [libcrypto])
 
-AC_SEARCH_LIBS([TSS_Create], [tss ibmtss], [], [
-	AC_MSG_ERROR([Unable to find the TSS2 library])
+AC_SEARCH_LIBS([TSS_Create], [tss ibmtss], [
+	AC_DEFINE(HAVE_IBM_TSS, 1, [Defined if we have the IBM TSS])
+	tsslibs=IBM
+    ], [
+	AC_SEARCH_LIBS([Esys_Initialize], [tss2-esys], [
+		LIBS="$LIBS -ltss2-mu -ltss2-rc -ltss2-tctildr"
+		AC_DEFINE(HAVE_INTEL_TSS, 1, [Defined if we have the Intel TSS])
+		tsslibs=Intel
+	    ], [
+		AC_MSG_ERROR([Unable to find either IBM or Intel TSS])
+	    ])
 ])
+AM_CONDITIONAL(HAVE_IBM_TSS, test "$tsslibs" = "IBM")
 
 AC_DISABLE_STATIC
 AC_PROG_CC_STDC
@@ -98,9 +103,16 @@ AC_SYS_LARGEFILE
 AC_PROG_LIBTOOL
 AC_PROG_LN_S
 
+if test "$tsslibs" = "IBM"; then
+##
+# ibmtss >= 1234 now requires TPM_POSIX be set
+##
+CFLAGS="$CFLAGS -DTPM_POSIX"
+CPPFLAGS="$CPPFLAGS -DTPM_POSIX"
 AC_CHECK_HEADER([tss2/tss.h],[AC_DEFINE(TSS_INCLUDE,tss2)],
 	AC_CHECK_HEADER([ibmtss/tss.h],[AC_DEFINE(TSS_INCLUDE,ibmtss)],
 	   AC_MSG_ERROR([No TSS2 include directory found])))
+fi
 
 AC_PATH_PROG(TPMSERVER, tpm_server,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
 AC_PATH_PROG(SWTPM, swtpm,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
@@ -110,6 +122,8 @@ SHREXT=$shrext_cmds
 AC_SUBST(CFLAGS)
 AC_SUBST(TSS_INCLUDE)
 AC_SUBST(SHREXT)
+TSSTYPE=$tsslibs
+AC_SUBST(TSSTYPE)
 
 if test -x "${SWTPM}" -a -x "${SWTPM_IOCTL}"; then
    testtpm=swtpm
@@ -129,6 +143,7 @@ cat <<EOF
 CFLAGS:				${CFLAGS}
 openssl engines directory:	${enginesdir}
 swtpm for testing:		${testtpm}
+tss libraries:                  ${tsslibs}
 
 EOF
 

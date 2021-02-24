@@ -1122,6 +1122,8 @@ TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir)
 		tpm2_error(rc, "TSS_Create");
 		return rc;
 	}
+
+#ifdef HAVE_IBM_TSS
 	if (dir) {
 		rc = TSS_SetProperty(*tsscp, TPM_DATA_DIR, dir);
 		if (rc) {
@@ -1129,6 +1131,7 @@ TPM_RC tpm2_create(TSS_CONTEXT **tsscp, const char *dir)
 			return rc;
 		}
 	}
+#endif
 
 	return TPM_RC_SUCCESS;
 }

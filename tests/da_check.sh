@@ -23,9 +23,17 @@ while true; do
     if grep -q TPM_RC_LOCKOUT tmp.txt; then
 	break;
     fi
+    if grep -q "TPM is in DA lockout" tmp.txt; then
+	break;
+    fi
+
     # The TPM can return RETRY instead of AUTH_FAIL if it is still writing
     # the DA state to NV ram
-    grep -q TPM_RC_AUTH_FAIL tmp.txt || grep -q TPM_RC_RETRY tmp.txt|| exit 1
+    if [ "$TSSTYPE" = "IBM" ]; then
+	grep -q TPM_RC_AUTH_FAIL tmp.txt || grep -q TPM_RC_RETRY tmp.txt|| exit 1
+    else
+	grep -q "HMAC check failed and DA counter incremented" tmp.txt || exit 1
+    fi
     count=$[$count+1]
 done
 echo "Locked out after $count tries"
@@ -38,7 +46,11 @@ if [ $val -ne 1 ]; then
     echo "Try with correct password did not fail correctly: $val"
     exit 1;
 fi
-grep -q TPM_RC_LOCKOUT tmp.txt || exit 1
+if [ "$TSSTYPE" = "IBM" ]; then
+    grep -q TPM_RC_LOCKOUT tmp.txt || exit 1
+else
+    grep -q "TPM is in DA lockout" tmp.txt || exit 1
+fi
 # clear the TPM DA (this would normally be password protected)
 tssdictionaryattacklockreset
 echo "This is a message" | 

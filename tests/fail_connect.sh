@@ -14,8 +14,12 @@ if [ $? -ne 1 ]; then
     exit 1
 fi
 cat tmp.txt
-grep -q 'TPM2_ReadPublic failed' tmp.txt || exit 1
-grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
+if [ "$TSSTYPE" = "IBM" ]; then
+    grep -q 'TPM2_ReadPublic failed' tmp.txt || exit 1
+    grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
+else
+    grep -q 'Failed to connect' tmp.txt || exit 1
+fi
 ##
 # This is a real TPM key so the ASN.1 parses correctly
 ##
@@ -54,8 +58,12 @@ if [ $? -ne 1 ]; then
     exit 1
 fi
 cat tmp.txt
-grep -q 'TPM2_StartAuthSession failed' tmp.txt || exit 1
-grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
+if [ "$TSSTYPE" = "IBM" ]; then
+    grep -q 'TPM2_StartAuthSession failed' tmp.txt || exit 1
+    grep -q TSS_RC_NO_CONNECTION tmp.txt || exit 1
+else
+    grep -q 'Failed to connect' tmp.txt || exit 1
+fi
 
 rm -f tmp.tpm tmp.txt
 

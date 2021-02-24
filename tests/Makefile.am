@@ -1,7 +1,9 @@
-TESTS = fail_connect.sh \
-	start_sw_tpm.sh \
-	check_tpm_directory.sh \
-	check_curves.sh \
+TESTS = fail_connect.sh
+TESTS += start_sw_tpm.sh
+if HAVE_IBM_TSS
+TESTS += check_tpm_directory.sh
+endif
+TESTS += check_curves.sh \
 	create_tpm_key.sh \
 	create_tpm_key_auth.sh \
 	check_auth.sh \
@@ -35,6 +37,7 @@ AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; export TPM_INTERFACE_TYPE; \
 	srcdir=$(abs_srcdir); export srcdir; \
 	OPENSSL_CONF=$(abs_srcdir)/openssl.cnf; export OPENSSL_CONF; \
 	TPMSERVER=$(TPMSERVER); export TPMSERVER; \
+	TSSTYPE=@TSSTYPE@; export TSSTYPE; \
 	SWTPM=$(SWTPM); export SWTPM; \
 	SWTPM_IOCTL=$(SWTPM_IOCTL); export SWTPM_IOCTL;
 
