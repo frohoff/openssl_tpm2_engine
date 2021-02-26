@@ -133,6 +133,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	rc = tpm2_create(&tssContext, app_data->dir);
 	if (rc)
 		goto err;
+	key = tpm2_handle_int(tssContext, key);
 	rc = tpm2_readpublic(tssContext, key, &p);
 	if (rc)
 		goto err_del;
@@ -145,7 +146,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 		tpm2_delete(app_data);
 		goto out;
 	}
-	app_data->key = key;
+	app_data->key = tpm2_handle_ext(tssContext, key);
 
 	if (VAL(p.objectAttributes) & TPMA_OBJECT_NODA) {
 		/* no DA implications, try an authorization and see
@@ -202,7 +203,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		TPM_HANDLE key;
 
 		key = strtoul(key_id + nvkey_len, NULL, 16);
-		if ((key & 0xff000000) != 0x81000000) {
+		if ((key >> 24) != TPM_HT_PERSISTENT) {
 			fprintf(stderr, "nvkey is not an NV index\n");
 			return 0;
 		}

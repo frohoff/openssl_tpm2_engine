@@ -7,6 +7,12 @@
 #include TSSINCLUDE(tsscrypto.h)
 #include TSSINCLUDE(tsscryptoh.h)
 
+#define EXT_TPM_RH_OWNER	TPM_RH_OWNER
+#define EXT_TPM_RH_PLATFORM	TPM_RH_PLATFORM
+#define EXT_TPM_RH_ENDORSEMENT	TPM_RH_ENDORSEMENT
+#define EXT_TPM_RH_NULL		TPM_RH_NULL
+#define INT_TPM_RH_NULL		TPM_RH_NULL
+
 #define VAL(X)			X.val
 #define VAL_2B(X, MEMBER)	X.b.MEMBER
 #define VAL_2B_P(X, MEMBER)	X->b.MEMBER
@@ -479,4 +485,22 @@ tpm2_PolicyCounterTimer(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 			 TPM_RH_NULL, NULL, 0);
 
 	return rc;
+}
+
+static inline TPM_HANDLE
+tpm2_handle_int(TSS_CONTEXT *tssContext, TPM_HANDLE h)
+{
+	return h;
+}
+
+static inline TPM_HANDLE
+tpm2_handle_ext(TSS_CONTEXT *tssContext, TPM_HANDLE h)
+{
+	return h;
+}
+
+static inline int
+tpm2_handle_mso(TSS_CONTEXT *tssContext, TPM_HANDLE h, UINT32 mso)
+{
+	return (h >> 24) == mso;
 }

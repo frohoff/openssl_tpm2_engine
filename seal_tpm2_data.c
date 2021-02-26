@@ -105,6 +105,7 @@ int main(int argc, char **argv)
 	BYTE *buffer;
 	int32_t size;
 	uint16_t pubkey_len, privkey_len;
+	char *parent_str = NULL;
 
 	while (1) {
 		option_index = 0;
@@ -146,12 +147,8 @@ int main(int argc, char **argv)
 			}
 			break;
 		case 'p':
-			parent = tpm2_get_parent(optarg);
-				if (parent == 0) {
-					fprintf(stderr, "Invalid parent %s\n", optarg);
-					exit(1);
-				}
-				break;
+			parent_str = optarg;
+			break;
 		case 'v':
 			fprintf(stdout, "%s " VERSION "\n"
 				"Copyright 2017 by James Bottomley\n"
@@ -227,7 +224,15 @@ int main(int argc, char **argv)
 		goto out_rmdir;
 	}
 
-	if ((parent & 0xff000000) == 0x40000000) {
+	if (parent_str) {
+		parent = tpm2_get_parent(tssContext, parent_str);
+		if (parent == 0) {
+			reason = "Invalid parent";
+			goto out_delete;
+		}
+	}
+
+	if (tpm2_handle_mso(tssContext, parent, TPM_HT_PERMANENT)) {
 		rc = tpm2_load_srk(tssContext, &phandle, parent_auth,
 				   NULL, parent, 1);
 		if (rc) {
@@ -298,6 +303,7 @@ int main(int argc, char **argv)
 	size = sizeof(privkey);
 	TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)&outPrivate, &privkey_len,
 				  &buffer, &size);
+	parent = tpm2_handle_ext(tssContext, parent);
 	tpm2_write_tpmfile(filename, pubkey, pubkey_len,
 			   privkey, privkey_len, data_auth == NULL,
 			   parent, sk, 2, NULL);

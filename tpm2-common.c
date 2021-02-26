@@ -609,7 +609,7 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK)
 {
 	/* only flush if it's a volatile key which we must have created */
-	if ((hSRK & 0xFF000000) == 0x80000000)
+	if (tpm2_handle_mso(tssContext, hSRK, TPM_HT_TRANSIENT))
 		tpm2_flush_handle(tssContext, hSRK);
 }
 
@@ -1380,7 +1380,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		ad->parent = ASN1_INTEGER_get(parent);
 	else
 		/* older keys have absent parent */
-		ad->parent = TPM_RH_OWNER;
+		ad->parent = EXT_TPM_RH_OWNER;
 
 	ad->pub = OPENSSL_malloc(pubkey->length);
 	if (!ad->pub)
@@ -1428,12 +1428,12 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			goto import_err;
 		}
 
-		if ((ad->parent & 0xff000000) == 0x40000000) {
+		parentHandle = tpm2_handle_int(tssContext, ad->parent);
+		if (tpm2_handle_mso(tssContext, parentHandle, TPM_HT_PERMANENT)) {
 			tpm2_load_srk(tssContext, &parentHandle,
-				      srk_auth, NULL, ad->parent, 1);
-		} else {
-			parentHandle = ad->parent;
+				      srk_auth, NULL, parentHandle, 1);
 		}
+
 		rc = tpm2_get_session_handle(tssContext, &session,
 					     parentHandle,
 					     TPM_SE_HMAC,
@@ -1562,7 +1562,7 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 		return 0;
 
 	if (app_data->key) {
-		key = app_data->key;
+		key = tpm2_handle_int(tssContext, app_data->key);
 		goto out;
 	}
 
@@ -1574,11 +1574,10 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 	size = app_data->pub_len;
 	TPM2B_PUBLIC_Unmarshal(&inPublic, &buffer, &size, FALSE);
 
-	if ((app_data->parent & 0xff000000) == 0x81000000) {
-		parentHandle = app_data->parent;
-	} else {
+	parentHandle = tpm2_handle_int(tssContext, app_data->parent);
+	if (tpm2_handle_mso(tssContext, parentHandle, TPM_HT_PERMANENT)) {
 		rc = tpm2_load_srk(tssContext, &parentHandle, srk_auth, NULL,
-				   app_data->parent, app_data->type);
+				   parentHandle, app_data->type);
 		if (rc)
 			goto out;
 	}
@@ -1615,31 +1614,38 @@ void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key)
 	TSS_Delete(tssContext);
 }
 
-TPM_HANDLE tpm2_get_parent(const char *pstr)
+TPM_HANDLE tpm2_get_parent_ext(const char *pstr)
 {
 	TPM_HANDLE p;
 
 	if (strcmp(pstr, "owner") == 0)
-		p = TPM_RH_OWNER;
+		p = EXT_TPM_RH_OWNER;
 	else if (strcmp(pstr, "platform") == 0)
-		p = TPM_RH_PLATFORM;
+		p = EXT_TPM_RH_PLATFORM;
 	else if (strcmp(pstr, "endorsement") == 0)
-		p = TPM_RH_ENDORSEMENT;
+		p = EXT_TPM_RH_ENDORSEMENT;
 	else if (strcmp(pstr, "null") == 0)
-		p = TPM_RH_NULL;
-	else
+		p = EXT_TPM_RH_NULL;
+	else {
 		p = strtoul(pstr, NULL, 16);
+		if ((p >> 24) != TPM_HT_PERSISTENT)
+			p = 0;
+	}
 
-	if (((p & 0xff000000) == 0x40000000) &&
-	    (p == TPM_RH_OWNER ||
-	     p == TPM_RH_PLATFORM ||
-	     p == TPM_RH_ENDORSEMENT ||
-	     p == TPM_RH_NULL))
-		return p;
-	else if ((p & 0xff000000) == 0x81000000)
+	return p;
+}
+
+TPM_HANDLE tpm2_get_parent(TSS_CONTEXT *tssContext, const char *pstr)
+{
+	TPM_HANDLE p;
+
+	p = tpm2_get_parent_ext(pstr);
+	if (p == 0)
 		return p;
 
-	return 0;
+	p = tpm2_handle_int(tssContext, p);
+
+	return p;
 }
 
 int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,

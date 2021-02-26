@@ -121,7 +121,7 @@ int main(int argc, char **argv)
 		usage(argv[0]);
 	}
 
-	if ((nvindex & 0xff000000) != 0x81000000) {
+	if ((nvindex >> 24) != TPM_HT_PERSISTENT) {
 		printf("nvindex must have MSO 81\n");
 		exit(1);
 	}

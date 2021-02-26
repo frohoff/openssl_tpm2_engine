@@ -78,7 +78,8 @@ TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
 void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key);
 void tpm2_delete(struct app_data *app_data);
 char *tpm2_get_auth(UI_METHOD *ui, char *input_string, void *cb_data);
-TPM_HANDLE tpm2_get_parent(const char *pstr);
+TPM_HANDLE tpm2_get_parent_ext(const char *pstr);
+TPM_HANDLE tpm2_get_parent(TSS_CONTEXT *tssContext, const char *pstr);
 int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		       BYTE *privkey, int privkey_len, int empty_auth,
 		       TPM_HANDLE parent, STACK_OF(TSSOPTPOLICY) *sk,

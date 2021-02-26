@@ -816,6 +816,7 @@ int main(int argc, char **argv)
 	TPMT_HA digest;
 	ENCRYPTED_SECRET_2B secret, *enc_secret = NULL;
 	int restricted = 0;
+	char *parent_str = NULL;
 
 	OpenSSL_add_all_digests();
 	/* may be needed to decrypt the key */
@@ -854,11 +855,7 @@ int main(int argc, char **argv)
 				}
 				break;
 			case 'p':
-				parent = tpm2_get_parent(optarg);
-				if (parent == 0) {
-					fprintf(stderr, "Invalid parent %s\n", optarg);
-					exit(1);
-				}
+				parent_str = optarg;
 				break;
 			case 's':
 				key_size = atoi(optarg);
@@ -985,6 +982,16 @@ int main(int argc, char **argv)
 		EVP_PKEY *pkey = openssl_read_key(wrap);
 		TPMT_SENSITIVE s;
 
+		if (parent_str) {
+			parent = tpm2_get_parent_ext(parent_str);
+			if (parent == 0) {
+				reason = "Invalid parent";
+				goto out_err;
+			}
+		} else {
+			parent = EXT_TPM_RH_OWNER;
+		}
+
 		/* steal existing private and public areas */
 		pub = &objectPublic;
 		priv = &outPrivate;
@@ -1052,7 +1059,15 @@ int main(int argc, char **argv)
 		goto out_free_auth;
 	}
 
-	if ((parent & 0xff000000) == 0x40000000) {
+	if (parent_str) {
+		parent = tpm2_get_parent(tssContext, parent_str);
+		if (parent == 0) {
+			reason = "Invalid parent";
+			goto out_delete;
+		}
+	}
+
+	if (tpm2_handle_mso(tssContext, parent, TPM_HT_PERMANENT)) {
 		rc = tpm2_load_srk(tssContext, &phandle, parent_auth, NULL, parent, version);
 		if (rc) {
 			reason = "tpm2_load_srk";
@@ -1214,6 +1229,7 @@ int main(int argc, char **argv)
 		priv = &outPrivate;
 	}
 	tpm2_flush_srk(tssContext, phandle);
+	parent = tpm2_handle_ext(tssContext, parent);
 	TSS_Delete(tssContext);
 	tpm2_rm_keyfile(dir, phandle);
 	tpm2_rm_tssdir(dir);
