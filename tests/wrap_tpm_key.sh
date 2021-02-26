@@ -1,8 +1,17 @@
 #!/bin/bash
 
-
 bindir=${srcdir}/..
 
+##
+# The Intel tss currently fails with the null seed, so skip the test
+#
+# see https://github.com/intel/tpm2-tss/issues/1993
+##
+if [ "$TSSTYPE" = "Intel" ]; then
+    TESTNULL=
+else
+    TESTNULL="-p null"
+fi
 ##
 # test is
 # 1. Create an openssl private key
@@ -12,7 +21,7 @@ bindir=${srcdir}/..
 # 5. verify the message through the public key
 ##
 openssl genrsa 2048 > key1.priv || exit 1;
-for parent in "" "-p 81000001" "-p owner" "-p null" "-p platform" "-p endorsement"; do
+for parent in "" "-p 81000001" "-p owner" "${TESTNULL}" "-p platform" "-p endorsement"; do
     echo "Handle: ${parent}"
     ${bindir}/create_tpm2_key ${parent} -w key1.priv key1.tpm || exit 1
     openssl rsa -engine tpm2 -inform engine -in key1.tpm -pubout -out key1.pub || exit 1
