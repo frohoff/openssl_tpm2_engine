@@ -112,6 +112,17 @@ CPPFLAGS="$CPPFLAGS -DTPM_POSIX"
 AC_CHECK_HEADER([tss2/tss.h],[AC_DEFINE(TSS_INCLUDE,tss2)],
 	AC_CHECK_HEADER([ibmtss/tss.h],[AC_DEFINE(TSS_INCLUDE,ibmtss)],
 	   AC_MSG_ERROR([No TSS2 include directory found])))
+else
+##
+# Intel TSS has an API issue: Esys_TR_GetTpmHandle wasn't introduced
+# until version 2.4.0.
+#
+# Note: the missing API is fairly serious and is also easily backportable
+# so keep the check below as is intead of going by library version number.
+##
+AC_CHECK_LIB(tss2-esys, Esys_TR_GetTpmHandle, [], [
+	AC_MSG_ERROR([Need Esys_TR_GetTpmHandle API (usually requires Intel TSS 2.4.0 or later)
+	])])
 fi
 
 AC_PATH_PROG(TPMSERVER, tpm_server,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
