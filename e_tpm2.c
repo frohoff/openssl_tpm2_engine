@@ -20,17 +20,7 @@
 #include "e_tpm2.h"
 
 char *srk_auth = NULL;
-static char *nvprefix;
-
-static int tpm2_engine_init(ENGINE * e)
-{
-	return 1;
-}
-
-static int tpm2_engine_finish(ENGINE * e)
-{
-	return 1;
-}
+static char *nvprefix = NULL;
 
 static int tpm2_set_nvkey_prefix(char *prefix)
 {
@@ -41,6 +31,38 @@ static int tpm2_set_nvkey_prefix(char *prefix)
 	len = strlen(prefix);
 	nvprefix = OPENSSL_malloc(len+1);
 	strcpy(nvprefix, prefix);
+
+	return 1;
+}
+
+static int tpm2_engine_init(ENGINE * e)
+{
+	if (!tpm2_set_nvkey_prefix("//nvkey:"))
+		return 0;
+
+	if (!tpm2_setup_ecc_methods())
+		goto err1;
+
+	if (!tpm2_setup_rsa_methods())
+		goto err2;
+
+	return 1;
+
+err2:
+	tpm2_teardown_ecc_methods();
+err1:
+	OPENSSL_free(nvprefix);
+	nvprefix = NULL;
+
+	return 0;
+}
+
+static int tpm2_engine_finish(ENGINE * e)
+{
+	tpm2_teardown_ecc_methods();
+	tpm2_teardown_rsa_methods();
+	OPENSSL_free(nvprefix);
+	nvprefix = NULL;
 
 	return 1;
 }
@@ -263,9 +285,7 @@ static int tpm2_bind_helper(ENGINE * e)
 	    !ENGINE_set_ctrl_function(e, tpm2_engine_ctrl) ||
 	    !ENGINE_set_load_pubkey_function(e, tpm2_engine_load_pubkey) ||
 	    !ENGINE_set_load_privkey_function(e, tpm2_engine_load_key) ||
-	    !ENGINE_set_cmd_defns(e, tpm2_cmd_defns) ||
-	    !tpm2_setup_ecc_methods() ||
-	    !tpm2_setup_rsa_methods())
+	    !ENGINE_set_cmd_defns(e, tpm2_cmd_defns))
 		return 0;
 
 	return 1;
@@ -281,7 +301,7 @@ static int tpm2_bind_fn(ENGINE * e, const char *id)
 		       id, engine_tpm2_id);
 		return 0;
 	}
-	tpm2_set_nvkey_prefix("//nvkey:");
+
 	if (!tpm2_bind_helper(e)) {
 		fprintf(stderr, "tpm2_bind_helper failed\n");
 		return 0;

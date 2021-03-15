@@ -324,3 +324,12 @@ int tpm2_setup_rsa_methods(void)
 
 	return 1;
 }
+
+void tpm2_teardown_rsa_methods(void)
+{
+#if OPENSSL_VERSION_NUMBER >= 0x10100000
+	RSA_meth_free(tpm2_rsa);
+#endif
+
+	CRYPTO_free_ex_index(CRYPTO_EX_INDEX_RSA, ex_app_data);
+}

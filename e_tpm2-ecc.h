@@ -3,5 +3,6 @@
 
 void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data);
 int tpm2_setup_ecc_methods(void);
+void tpm2_teardown_ecc_methods(void);
 
 #endif

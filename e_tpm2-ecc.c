@@ -332,3 +332,14 @@ int tpm2_setup_ecc_methods(void)
 
 	return 1;
 }
+
+void tpm2_teardown_ecc_methods(void)
+{
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+	ECDSA_METHOD_free(tpm2_ecdsa);
+	CRYPTO_free_ex_index(CRYPTO_EX_INDEX_ECDSA, ec_app_data);
+#else
+	EC_KEY_METHOD_free(tpm2_eck);
+	CRYPTO_free_ex_index(CRYPTO_EX_INDEX_EC_KEY, ec_app_data);
+#endif
+}
