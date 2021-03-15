@@ -26,7 +26,7 @@
 /* varibles used to get/set CRYPTO_EX_DATA values */
 static int ex_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
 
-RSA_METHOD *tpm2_rsa;
+RSA_METHOD *tpm2_rsa = NULL;
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 /* rsa functions */
@@ -315,6 +315,10 @@ int tpm2_setup_rsa_methods(void)
 	tpm2_rsa = &tpm2_rsa_meths;
 #else
 	tpm2_rsa = RSA_meth_dup(RSA_PKCS1_OpenSSL());
+
+	if (!tpm2_rsa)
+		goto err;
+
 	RSA_meth_set1_name(tpm2_rsa, "tpm2 rsa");
 	RSA_meth_set_priv_enc(tpm2_rsa, tpm2_rsa_priv_enc);
 	RSA_meth_set_priv_dec(tpm2_rsa, tpm2_rsa_priv_dec);
@@ -322,14 +326,28 @@ int tpm2_setup_rsa_methods(void)
 
 	ex_app_data = RSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_rsa_free);
 
+	if (ex_app_data < 0)
+		goto err;
+
 	return 1;
+
+err:
+	tpm2_teardown_rsa_methods();
+
+	return 0;
 }
 
 void tpm2_teardown_rsa_methods(void)
 {
 #if OPENSSL_VERSION_NUMBER >= 0x10100000
-	RSA_meth_free(tpm2_rsa);
+	if (tpm2_rsa) {
+		RSA_meth_free(tpm2_rsa);
+		tpm2_rsa = NULL;
+	}
 #endif
 
-	CRYPTO_free_ex_index(CRYPTO_EX_INDEX_RSA, ex_app_data);
+	if (ex_app_data >= 0) {
+		CRYPTO_free_ex_index(CRYPTO_EX_INDEX_RSA, ex_app_data);
+		ex_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
+	}
 }

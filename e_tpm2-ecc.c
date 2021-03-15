@@ -45,13 +45,13 @@ struct ecdh_method {
     int flags;
     char *app_data;
 };
-static ECDSA_METHOD *tpm2_ecdsa;
+static ECDSA_METHOD *tpm2_ecdsa = NULL;
 static ECDH_METHOD tpm2_ecdh = {
 	.name = "tpm2 ecc",
 	.compute_key = tpm2_ecdh_compute_key,
 };
 #else
-static EC_KEY_METHOD *tpm2_eck;
+static EC_KEY_METHOD *tpm2_eck = NULL;
 #endif
 
 /* varibles used to get/set CRYPTO_EX_DATA values */
@@ -307,12 +307,15 @@ int tpm2_setup_ecc_methods(void)
 	tpm2_ecdsa = ECDSA_METHOD_new(NULL);
 
 	if (!tpm2_ecdsa)
-		return 0;
+		goto err;
 
 	ECDSA_METHOD_set_name(tpm2_ecdsa, "tpm2 ecc");
 	ECDSA_METHOD_set_sign(tpm2_ecdsa, tpm2_ecdsa_sign);
 
-	ec_app_data =  ECDSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_ecc_free);
+	ec_app_data = ECDSA_get_ex_new_index(0, NULL, NULL, NULL, tpm2_ecc_free);
+
+	if (ec_app_data < 0)
+		goto err;
 #else
 	int (*psign)(int type, const unsigned char *dgst,
 		     int dlen, unsigned char *sig,
@@ -322,24 +325,48 @@ int tpm2_setup_ecc_methods(void)
 
 	tpm2_eck = EC_KEY_METHOD_new(EC_KEY_OpenSSL());
 
+	if (!tpm2_eck)
+		goto err;
+
 	EC_KEY_METHOD_get_sign(tpm2_eck, &psign, NULL, NULL);
 	EC_KEY_METHOD_set_sign(tpm2_eck, psign, NULL, tpm2_ecdsa_sign);
 	EC_KEY_METHOD_set_compute_key(tpm2_eck, tpm2_ecc_compute_key);
 
 	ec_app_data = EC_KEY_get_ex_new_index(0, NULL, NULL, NULL, tpm2_ecc_free);
+
+	if (ec_app_data < 0)
+		goto err;
 #endif
 
-
 	return 1;
+
+err:
+	tpm2_teardown_ecc_methods();
+
+	return 0;
 }
 
 void tpm2_teardown_ecc_methods(void)
 {
 #if OPENSSL_VERSION_NUMBER < 0x10100000
-	ECDSA_METHOD_free(tpm2_ecdsa);
-	CRYPTO_free_ex_index(CRYPTO_EX_INDEX_ECDSA, ec_app_data);
+	if (tpm2_ecdsa) {
+		ECDSA_METHOD_free(tpm2_ecdsa);
+		tpm2_ecdsa = NULL;
+	}
+
+	if (ec_app_data >= 0) {
+		CRYPTO_free_ex_index(CRYPTO_EX_INDEX_ECDSA, ec_app_data);
+		ec_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
+	}
 #else
-	EC_KEY_METHOD_free(tpm2_eck);
-	CRYPTO_free_ex_index(CRYPTO_EX_INDEX_EC_KEY, ec_app_data);
+	if (tpm2_eck) {
+		EC_KEY_METHOD_free(tpm2_eck);
+		tpm2_eck = NULL;
+	}
+
+	if (ec_app_data >= 0) {
+		CRYPTO_free_ex_index(CRYPTO_EX_INDEX_EC_KEY, ec_app_data);
+		ec_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
+	}
 #endif
 }

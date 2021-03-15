@@ -30,6 +30,8 @@ static int tpm2_set_nvkey_prefix(char *prefix)
 		OPENSSL_free(nvprefix);
 	len = strlen(prefix);
 	nvprefix = OPENSSL_malloc(len+1);
+	if (!nvprefix)
+		return 0;
 	strcpy(nvprefix, prefix);
 
 	return 1;
