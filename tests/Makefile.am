@@ -43,6 +43,6 @@ AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; export TPM_INTERFACE_TYPE; \
 
 TEST_EXTENSIONS = .sh
 
-CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der seal.*
+CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der seal.* fifo tss2.*
 clean-local:
 	rm -fr testdir

@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <ctype.h>
+#include <errno.h>
+#include <pwd.h>
+#include <grp.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -1074,9 +1077,16 @@ const char *tpm2_curve_name_to_text(TPMI_ECC_CURVE curve)
 
 const char *tpm2_set_unique_tssdir(void)
 {
+	char *dir_owner = getenv("XDG_RUNTIME_DIR_OWNER");
+	char *dir_group = getenv("XDG_RUNTIME_DIR_GROUP");
 	char *prefix = getenv("XDG_RUNTIME_DIR"), *template,
 		*dir;
-	int len = 0;
+	int ret, len = 0;
+	struct stat st;
+	struct passwd *pwd;
+	struct group *grp;
+	uid_t uid;
+	gid_t gid;
 
 	if (!prefix)
 		prefix = "/tmp";
@@ -1092,6 +1102,38 @@ const char *tpm2_set_unique_tssdir(void)
 	len = snprintf(template, len, "%s/tss2.XXXXXX", prefix);
 
 	dir = mkdtemp(template);
+	if (!dir)
+		goto out;
+
+	if (stat(dir, &st) == -1)
+		goto out;
+
+	uid = st.st_uid;
+	if (dir_owner) {
+		pwd = getpwnam(dir_owner);
+		if (pwd)
+			uid = pwd->pw_uid;
+	}
+
+	gid = st.st_gid;
+	if (dir_group) {
+		grp = getgrnam(dir_group);
+		if (grp)
+			gid = grp->gr_gid;
+	}
+
+	if (geteuid() != 0 && (uid != getuid() || gid != getgid()))
+		goto out;
+
+	if (dir_owner || dir_group) {
+		ret = chown(dir, uid, gid);
+		if (ret == -1) {
+			fprintf(stderr, "chown() failed (%s)", strerror(errno));
+			unlink(dir);
+			dir = NULL;
+		}
+	}
+out:
 	return dir;
 }
 
