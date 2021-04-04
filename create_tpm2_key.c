@@ -36,6 +36,7 @@ static struct option long_options[] = {
 	{"key-size", 1, 0, 's'},
 	{"name-scheme", 1, 0, 'n'},
 	{"parent-handle", 1, 0, 'p'},
+	{"pcr-lock", 1, 0, 'x'},
 	{"wrap", 1, 0, 'w'},
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
@@ -94,6 +95,9 @@ usage(char *argv0)
 		"                                may not be used for general signing or\n"
 		"                                decryption but may be the parent of other\n"
 		"                                keys (i.e. it is a storage key)\n"
+		"\t-x, --pcr-lock <pcrs>         Lock the created key to the specified PCRs\n"
+		"                                By current value.  See PCR VALUES for\n"
+		"                                details about formatting\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -817,6 +821,10 @@ int main(int argc, char **argv)
 	ENCRYPTED_SECRET_2B secret, *enc_secret = NULL;
 	int restricted = 0;
 	char *parent_str = NULL;
+	TPML_PCR_SELECTION pcr_lock;
+	int has_policy = 0;
+
+	pcr_lock.count = 0;
 
 	OpenSSL_add_all_digests();
 	/* may be needed to decrypt the key */
@@ -824,7 +832,7 @@ int main(int argc, char **argv)
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "n:s:ab:p:hw:vk:re:ldc:i:",
+		c = getopt_long(argc, argv, "n:s:ab:p:hw:vk:re:ldc:i:x:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -899,6 +907,9 @@ int main(int argc, char **argv)
 			case 'i':
 				import = optarg;
 				break;
+			case 'x':
+				tpm2_get_pcr_lock(&pcr_lock, optarg);
+				break;
 			case OPT_DEPRECATED:
 				version = 0;
 				break;
@@ -944,11 +955,24 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	if (pcr_lock.count !=0 && policyFilename) {
+		fprintf(stderr, "cannot specify both policy file and pcr lock\n");
+		exit(1);
+	}
+
+	if (pcr_lock.count != 0 && import) {
+		fprintf(stderr, "cannot specify pcr lock and import because pcrs may not be correct\n");
+		exit(1);
+	}
+
+	if (pcr_lock.count != 0 || policyFilename)
+		has_policy = 1;
+
 	digest.hashAlg = name_alg;
 	sizeInBytes = TSS_GetDigestSize(digest.hashAlg);
 	memset((uint8_t *)&digest.digest, 0, sizeInBytes);
 
-	if (policyFilename) {
+	if (has_policy) {
 		sk = sk_TSSOPTPOLICY_new_null();
 		if (!sk) {
 			rc = NOT_TPM_ERROR;
@@ -956,10 +980,11 @@ int main(int argc, char **argv)
 			goto out_err;
 		}
 
-		rc = tpm2_parse_policy_file(policyFilename, sk, auth, &digest);
-		if (rc) {
+		if (policyFilename) {
+			rc = tpm2_parse_policy_file(policyFilename, sk, auth, &digest);
 			reason = "parse_policy_file";
-			goto out_free_policy;
+			if (rc)
+				goto out_free_policy;
 		}
 	}
 
@@ -975,12 +1000,16 @@ int main(int argc, char **argv)
 				goto out_free_auth;
 			}
 		}
+		if (has_policy && !policyFilename)
+			tpm2_add_auth_policy(sk, &digest);
 	}
 
 	if (import) {
 		EVP_PKEY *p_pkey = openssl_read_public_key(import);
 		EVP_PKEY *pkey = openssl_read_key(wrap);
 		TPMT_SENSITIVE s;
+
+		rc = NOT_TPM_ERROR;
 
 		if (parent_str) {
 			parent = tpm2_get_parent_ext(parent_str);
@@ -995,8 +1024,6 @@ int main(int argc, char **argv)
 		/* steal existing private and public areas */
 		pub = &objectPublic;
 		priv = &outPrivate;
-
-		rc = NOT_TPM_ERROR;
 
 		if (!p_pkey || !pkey) {
 			reason = "read openssl key";
@@ -1014,7 +1041,7 @@ int main(int argc, char **argv)
 			reason = "openssl_to_tpm_public";
 			goto out_err;
 		}
-		if (policyFilename) {
+		if (has_policy) {
 			VAL(pub->publicArea.objectAttributes) &=
 				~TPMA_OBJECT_USERWITHAUTH;
 			rc = TSS_TPM2B_Create(
@@ -1057,6 +1084,15 @@ int main(int argc, char **argv)
 	if (rc) {
 		reason = "TSS_Create";
 		goto out_free_auth;
+	}
+
+	if (pcr_lock.count != 0) {
+		rc = tpm2_pcr_lock_policy(tssContext, &pcr_lock,
+					  sk, &digest);
+		if (rc) {
+			reason = "create pcr policy";
+			goto out_free_auth;
+		}
 	}
 
 	if (parent_str) {
@@ -1111,7 +1147,7 @@ int main(int argc, char **argv)
 			goto out_flush;
 		}
 
-		if (policyFilename) {
+		if (has_policy) {
 			VAL(objectPublic.publicArea.objectAttributes) &=
 				~TPMA_OBJECT_USERWITHAUTH;
 			rc = TSS_TPM2B_Create(
@@ -1171,7 +1207,7 @@ int main(int argc, char **argv)
 			tpm2_public_template_ecc(&objectPublic.publicArea, ecc);
 		}
 
-		if (policyFilename) {
+		if (has_policy) {
 			VAL(objectPublic.publicArea.objectAttributes) &=
 				~TPMA_OBJECT_USERWITHAUTH;
 			rc = TSS_TPM2B_Create(

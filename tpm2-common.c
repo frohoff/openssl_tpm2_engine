@@ -29,6 +29,25 @@
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
+static struct {
+	const char *hash;
+	TPM_ALG_ID alg;
+} tpm2_hashes[] = {
+	{ "sha1", TPM_ALG_SHA1 },
+	{ "sha256", TPM_ALG_SHA256 },
+	{ "sha384", TPM_ALG_SHA384 },
+#ifdef TPM_ALG_SHA512
+	{ "sha512", TPM_ALG_SHA512 },
+#endif
+#ifdef TPM_ALG_SM3_256
+	{ "sm3", TPM_ALG_SM3_256 },
+#endif
+	{ NULL, 0 }
+};
+
+#define		MAX_TPM_PCRS	24
+const int	MAX_TPM_PCRS_ARRAY = (MAX_TPM_PCRS + 7)/8;
+
 struct myTPM2B {
 	UINT16 s;
 	BYTE *const b;
@@ -1889,6 +1908,240 @@ void tpm2_free_policy(STACK_OF(TSSOPTPOLICY) *sk)
 			TSSOPTPOLICY_free(policy);
 
 	sk_TSSOPTPOLICY_free(sk);
+}
+
+static const char *get_hash_by_alg(TPM_ALG_ID alg)
+{
+	int i;
+
+	for (i = 0; tpm2_hashes[i].hash; i++)
+		if (tpm2_hashes[i].alg == alg)
+			break;
+
+	return tpm2_hashes[i].hash;
+}
+
+static int add_pcrs_hash(TPML_PCR_SELECTION *pcrs, char *bank)
+{
+	int i;
+	TPM_ALG_ID alg;
+
+	for (i = 0; tpm2_hashes[i].hash; i++)
+		if (strcmp(tpm2_hashes[i].hash, bank) == 0)
+			break;
+
+	if (!tpm2_hashes[i].hash) {
+		fprintf(stderr, "unknown bank in pcrs list %s\n", bank);
+		exit(1);
+	}
+	alg = tpm2_hashes[i].alg;
+
+	for (i = 0; i < pcrs->count; i++)
+		if (pcrs->pcrSelections[i].hash == alg) {
+			fprintf(stderr, "hash bank %s was already specified\n", bank);
+			exit(1);
+		}
+
+	pcrs->pcrSelections[i].hash = alg;
+	pcrs->pcrSelections[i].sizeofSelect = MAX_TPM_PCRS_ARRAY;
+	pcrs->count++;
+
+	return i;
+}
+
+static void update_pcrs(TPML_PCR_SELECTION *pcrs, int bank, char *str)
+{
+	char *sep = strchr(str, '-');
+	char *endptr;
+	long from, to;
+	int i;
+
+	if (sep)
+		*sep = '\0';
+	from = to = strtol(str, &endptr, 10);
+	if (*endptr != '\0' || from < 0 || from >= MAX_TPM_PCRS)
+		goto err;
+
+	if (sep) {
+		str = sep + 1;
+		to = strtol(str, &endptr, 10);
+
+		if (*endptr != '\0' || to < 0 || to >= MAX_TPM_PCRS)
+			goto err;
+	}
+	if (to < from) {
+		fprintf(stderr, "Incorrect PCR range specified %ld-%ld\n",
+			from, to);
+		exit(1);
+	}
+
+	for (i = from; i <= to; i++)
+		pcrs->pcrSelections[bank].pcrSelect[i/8] |= (1 << (i%8));
+
+	return;
+ err:
+	fprintf(stderr, "incorrect PCR specification %s\n", str);
+	exit(1);
+}
+
+void tpm2_get_pcr_lock(TPML_PCR_SELECTION *pcrs, char *arg)
+{
+	char *sep = strchr(arg, ':');
+	char *bankstr = arg;
+	int bank;
+
+	if (sep) {
+		*sep = '\0';
+		arg = sep + 1;
+	} else {
+		bankstr = "sha256";
+	}
+	bank = add_pcrs_hash(pcrs, bankstr);
+	for (sep = strchr(arg, ','); sep; arg = sep + 1, sep = strchr(arg, ',')) {
+		*sep = '\0';
+		update_pcrs(pcrs, bank, arg);
+	}
+	update_pcrs(pcrs, bank, arg);
+}
+
+static int hash_print(const char *hash, int start, BYTE val, int k,
+		      TPML_DIGEST *dl, EVP_MD_CTX *ctx)
+{
+	int i, j;
+
+	for (i = 0; i < 8; i++) {
+		TPM2B_DIGEST *d;
+		BYTE *db;
+
+		if ((val & (1 << i)) == 0)
+			continue;
+
+		d = &dl->digests[k++];
+		db = VAL_2B_P(d, buffer);
+		EVP_DigestUpdate(ctx, VAL_2B_P(d, buffer), VAL_2B_P(d, size));
+		printf("%s: %02d: ", hash, start + i);
+		for (j = 0; j < VAL_2B_P(d, size); j++) {
+			printf("%02x", db[j]);
+		}
+		printf("\n");
+	}
+	return k;
+}
+
+static void pcr_digests_process(TPML_PCR_SELECTION *in, TPML_PCR_SELECTION *out,
+				TPML_DIGEST *d, EVP_MD_CTX *ctx)
+{
+	int i, j, k = 0;
+
+	for (i = 0; i < in->count; i++) {
+		const char *hash = get_hash_by_alg(out->pcrSelections[i].hash);
+
+		for (j = 0; j < MAX_TPM_PCRS_ARRAY; j++) {
+			in->pcrSelections[i].pcrSelect[j] &=
+				~out->pcrSelections[i].pcrSelect[j];
+
+			k = hash_print(hash, j * 8,
+				       out->pcrSelections[i].pcrSelect[j],
+				       k, d, ctx);
+		}
+	}
+}
+
+TPM_RC tpm2_pcr_lock_policy(TSS_CONTEXT *tssContext,
+			    TPML_PCR_SELECTION *pcrs,
+			    STACK_OF(TSSOPTPOLICY) *sk,
+			    TPMT_HA *digest)
+{
+	TSSOPTPOLICY *policy = TSSOPTPOLICY_new();
+	TPM_RC rc;
+	BYTE buf[1024];
+	UINT16 written = 0;
+	INT32 size = sizeof(buf);
+	const TPM_CC cc = TPM_CC_PolicyPCR;
+	DIGEST_2B pcrDigest;
+	BYTE *buffer = buf;
+	TPML_PCR_SELECTION pcrread, pcrreturn;
+	TPML_DIGEST pcr_digests;
+	EVP_MD_CTX *ctx = EVP_MD_CTX_create();
+
+	switch (digest->hashAlg) {
+	case TPM_ALG_SHA1:
+		EVP_DigestInit_ex(ctx, EVP_sha1(), NULL);
+		break;
+	case TPM_ALG_SHA256:
+		EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
+		break;
+	case TPM_ALG_SHA384:
+		EVP_DigestInit_ex(ctx, EVP_sha384(), NULL);
+		break;
+#ifdef TPM_ALG_SHA512
+	case TPM_ALG_SHA512:
+		EVP_DigestInit_ex(ctx, EVP_sha512(), NULL);
+		break;
+#endif
+#ifdef TPM_ALG_SM3_256
+	case TPM_ALG_SM3_256:
+		EVP_DigestInit_ex(ctx, EVP_sm3(), NULL);
+		break;
+#endif
+	default:
+		fprintf(stderr, "Unknown TPM hash algorithm 0x%x\n",
+			digest->hashAlg);
+		exit(1);
+	}
+
+	pcrread = *pcrs;
+
+	for (;;) {
+		rc = tpm2_PCR_Read(tssContext, &pcrread, &pcrreturn, &pcr_digests);
+		if (pcr_digests.count == 0 || rc != TPM_RC_SUCCESS)
+			break;
+
+		pcr_digests_process(&pcrread, &pcrreturn, &pcr_digests, ctx);
+	}
+
+	EVP_DigestFinal_ex(ctx, pcrDigest.buffer, NULL);
+	pcrDigest.size = TSS_GetDigestSize(digest->hashAlg);
+	EVP_MD_CTX_destroy(ctx);
+
+	if (rc)
+		return rc;
+
+	ASN1_INTEGER_set(policy->CommandCode, cc);
+	TSS_TPM_CC_Marshal(&cc, &written, &buffer, &size);
+	TSS_TPML_PCR_SELECTION_Marshal(pcrs, &written, &buffer, &size);
+	memcpy(buffer, pcrDigest.buffer, pcrDigest.size);
+	written += pcrDigest.size;
+	ASN1_STRING_set(policy->CommandPolicy, buf + 4, written - 4);
+	sk_TSSOPTPOLICY_push(sk, policy);
+
+	TSS_Hash_Generate(digest,
+			  TSS_GetDigestSize(digest->hashAlg),
+			  (uint8_t *)&digest->digest,
+			  written, buf, 0, NULL);
+
+	return TPM_RC_SUCCESS;
+}
+
+void tpm2_add_auth_policy(STACK_OF(TSSOPTPOLICY) *sk, TPMT_HA *digest)
+{
+	TSSOPTPOLICY *policy = TSSOPTPOLICY_new();
+	BYTE buf[4];
+	BYTE *buffer = buf;
+	UINT16 written = 0;
+	INT32 size = sizeof(buf);
+	const TPM_CC cc = TPM_CC_PolicyAuthValue;
+
+	TSS_TPM_CC_Marshal(&cc, &written, &buffer, &size);
+
+	ASN1_INTEGER_set(policy->CommandCode, cc);
+	ASN1_STRING_set(policy->CommandPolicy, "", 0);
+	sk_TSSOPTPOLICY_push(sk, policy);
+
+	TSS_Hash_Generate(digest,
+			  TSS_GetDigestSize(digest->hashAlg),
+			  (uint8_t *)&digest->digest,
+			  written, buf, 0, NULL);
 }
 
 IMPLEMENT_ASN1_FUNCTIONS(TSSOPTPOLICY)

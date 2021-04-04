@@ -179,6 +179,9 @@ TSS_CONVERT_MARSHAL(TPM2B_ECC_POINT, )
 TSS_CONVERT_MARSHAL(TPM2B_DIGEST, )
 TSS_CONVERT_MARSHAL(TPM2B_PUBLIC, )
 TSS_CONVERT_MARSHAL(TPM2B_PRIVATE, )
+TSS_CONVERT_MARSHAL(TPML_PCR_SELECTION, )
+TSS_CONVERT_MARSHAL(UINT32, *)
+#define TSS_TPM_CC_Marshal TSS_UINT32_Marshal
 
 TSS_CONVERT_UNMARSHAL(TPML_PCR_SELECTION, )
 TSS_CONVERT_UNMARSHAL(TPM2B_PRIVATE, )
@@ -933,6 +936,25 @@ tpm2_PolicyCounterTimer(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 	return Esys_PolicyCounterTimer(tssContext, policySession,
 				       ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
 				       operandB, offset, operation);
+}
+
+static inline TPM_RC
+tpm2_PCR_Read(TSS_CONTEXT *tssContext, TPML_PCR_SELECTION *pcrSelectionIn,
+	      TPML_PCR_SELECTION *pcrSelectionOut, TPML_DIGEST *pcrValues)
+{
+	TPML_PCR_SELECTION *out;
+	TPML_DIGEST *val;
+	TPM_RC rc;
+
+	rc = Esys_PCR_Read(tssContext, ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+			   pcrSelectionIn, NULL, &out, &val);
+	if (rc)
+		return rc;
+
+	*pcrSelectionOut = *out;
+	*pcrValues = *val;
+
+	return rc;
 }
 
 static inline TPM_HANDLE

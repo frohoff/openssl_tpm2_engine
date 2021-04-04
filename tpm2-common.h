@@ -88,4 +88,10 @@ TPM_RC tpm2_parse_policy_file(const char *policy_file,
 			      STACK_OF(TSSOPTPOLICY) *sk,
 			      char *auth, TPMT_HA *digest);
 void tpm2_free_policy(STACK_OF(TSSOPTPOLICY) *sk);
+void tpm2_get_pcr_lock(TPML_PCR_SELECTION *pcrs, char *arg);
+TPM_RC tpm2_pcr_lock_policy(TSS_CONTEXT *tssContext,
+			    TPML_PCR_SELECTION *pcrs,
+			    STACK_OF(TSSOPTPOLICY) *sk,
+			    TPMT_HA *digest);
+void tpm2_add_auth_policy(STACK_OF(TSSOPTPOLICY) *sk, TPMT_HA *digest);
 #endif

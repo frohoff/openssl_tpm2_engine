@@ -487,6 +487,32 @@ tpm2_PolicyCounterTimer(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 	return rc;
 }
 
+static inline TPM_RC
+tpm2_PCR_Read(TSS_CONTEXT *tssContext, TPML_PCR_SELECTION *pcrSelectionIn,
+	      TPML_PCR_SELECTION *pcrSelectionOut, TPML_DIGEST *pcrValues)
+{
+	PCR_Read_In in;
+	PCR_Read_Out out;
+	TPM_RC rc;
+
+	in.pcrSelectionIn = *pcrSelectionIn;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_PCR_Read,
+			 TPM_RH_NULL, NULL, 0);
+
+	if (rc)
+		return rc;
+
+	*pcrSelectionOut = out.pcrSelectionOut;
+	*pcrValues = out.pcrValues;
+
+	return rc;
+}
+
 static inline TPM_HANDLE
 tpm2_handle_int(TSS_CONTEXT *tssContext, TPM_HANDLE h)
 {
