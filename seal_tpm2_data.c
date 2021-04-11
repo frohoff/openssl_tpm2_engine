@@ -27,6 +27,7 @@ static struct option long_options[] = {
 	{"auth-parent", 1, 0, 'b'},
 	{"help", 0, 0, 'h'},
 	{"parent-handle", 1, 0, 'p'},
+	{"pcr-lock", 1, 0, 'x'},
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
 	{"da", 0, 0, 'd'},
@@ -71,6 +72,10 @@ usage(char *argv0)
 		"\t-m,--nomigrate                Create a sealed data bundle that can be\n"
 		"                                migrated to other systems.\n"
 		"\t-n, --name-scheme <scheme>    name algorithm to use sha1 [sha256] sha384 sha512\n"
+		"\t-x, --pcr-lock <pcrs>         Lock the created key to the specified PCRs\n"
+		"                                By current value.  See PCR VALUES for\n"
+		"                                details about formatting\n"
+		"\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -106,6 +111,10 @@ int main(int argc, char **argv)
 	int32_t size;
 	uint16_t pubkey_len, privkey_len;
 	char *parent_str = NULL;
+	TPML_PCR_SELECTION pcr_lock;
+	int has_policy = 0;
+
+	pcr_lock.count = 0;
 
 	while (1) {
 		option_index = 0;
@@ -165,6 +174,9 @@ int main(int argc, char **argv)
 		case 'm':
 			nomigrate = 1;
 			break;
+		case 'x':
+			tpm2_get_pcr_lock(&pcr_lock, optarg);
+			break;
 		default:
 			printf("Unknown option '%c'\n", c);
 			usage(argv[0]);
@@ -183,22 +195,32 @@ int main(int argc, char **argv)
 		usage(argv[0]);
 	}
 
+	if (pcr_lock.count !=0 && policyFilename) {
+		fprintf(stderr, "cannot specify both policy file and pcr lock\n");
+		exit(1);
+	}
+
+	if (pcr_lock.count != 0 || policyFilename)
+		has_policy = 1;
+
 	digest.hashAlg = name_alg;
 	sizeInBytes = TSS_GetDigestSize(digest.hashAlg);
 	memset((uint8_t *)&digest.digest, 0, sizeInBytes);
 
-	if (policyFilename) {
+	if (has_policy) {
 		sk = sk_TSSOPTPOLICY_new_null();
 		if (!sk) {
 			fprintf(stderr, "Failed to allocate policy stack\n");
 			exit(1);
 		}
 
-		rc = tpm2_parse_policy_file(policyFilename, sk,
-					    data_auth, &digest);
-		if (rc) {
-			reason = "parse_policy_file";
-			goto out_free_policy;
+		if (policyFilename) {
+			rc = tpm2_parse_policy_file(policyFilename, sk,
+						    data_auth, &digest);
+			if (rc) {
+				reason = "parse_policy_file";
+				goto out_free_policy;
+			}
 		}
 	}
 
@@ -215,6 +237,8 @@ int main(int argc, char **argv)
 				goto out_free_auth;
 			}
 		}
+		if (has_policy && !policyFilename)
+			tpm2_add_auth_policy(sk, &digest);
 	}
 
 	dir = tpm2_set_unique_tssdir();
@@ -222,6 +246,15 @@ int main(int argc, char **argv)
 	if (rc) {
 		reason = "TSS_Create";
 		goto out_rmdir;
+	}
+
+	if (pcr_lock.count != 0) {
+		rc = tpm2_pcr_lock_policy(tssContext, &pcr_lock,
+					  sk, &digest);
+		if (rc) {
+			reason = "create pcr policy";
+			goto out_free_auth;
+		}
 	}
 
 	if (parent_str) {
@@ -245,7 +278,7 @@ int main(int argc, char **argv)
 
 	tpm2_public_template_seal(p);
 
-	if (policyFilename) {
+	if (has_policy) {
 		VAL(p->objectAttributes) &=
 			~TPMA_OBJECT_USERWITHAUTH;
 		rc = TSS_TPM2B_Create(

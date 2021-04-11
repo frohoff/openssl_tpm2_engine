@@ -7,6 +7,20 @@ Used to create a sealed blob of data which can be unsealed via the
 TPM.  Possible uses for this blob of data include as a symmetric key,
 which is the use in the linux kernel trusted key infrastructure.
 
+[PCR Values]
+
+The PCR values are specified as
+
+ <bank>:<list>
+
+Where <bank> is any supported PCR hash bank and list specifies the
+PCRs to lock the key to as both comma separated individual values as
+well as comma separated ranges.  So
+
+ sha256:1,3 means PCRs 1 and 3 in the sha256 bank
+
+ sha512:1,3-5 means PCRs 1,3,4 and 5 in the sha512 bank
+
 [examples]
 
 Create a sealed data blob to the storage parent (owner hierarchy)
