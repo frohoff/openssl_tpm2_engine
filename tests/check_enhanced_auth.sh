@@ -22,6 +22,21 @@ a=0; while [ $a -lt 5 ]; do
     echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && exit 1
 done
 
+##
+# Randomize the PCR banks
+##
+for h in "sha1" "sha256" "sha384"; do
+    pcr=0;
+    while [ $pcr -le 24 ]; do
+	tsspcrextend -ha $pcr -halg $h -ic $RANDOM
+	pcr=$[$pcr + 1]
+    done
+    ##
+    # reset PCR 16 for the fixed policy tests
+    ##
+    ${tss_pcrreset_cmd} -ha 16 -halg $h
+done
+
 for h in "sha1" "" "sha384"; do
     echo "Testing Name Parameter: ${h}"
     if [ -n "${h}" ]; then
@@ -103,4 +118,34 @@ for h in "sha1" "" "sha384"; do
 	openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
 	echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -passin pass:passw0rd -out tmp.msg && \
 	openssl rsautl -verify -in tmp.msg -inkey key2.pub -pubin || exit 1
+
+    ##
+    # test is
+    # 1. Create a key on a huge range of PCRs (testing multiple reads)
+    # 2. verify key works with undisturbed PCRs
+    # 3. extend non-mentioned pcr and verify key works
+    # 4. extend mentioned PCR and verify key fails
+    ##
+    ${bindir}/create_tpm2_key ${n} -a -k passw0rd key.tpm --pcr-lock 1,2,3-15,17-23 --pcr-lock sha1:1-4 --pcr-lock sha384:10-20 || exit 1
+    openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key.tpm -pubout -out key.pub || exit 1
+    echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg || exit 1
+    openssl rsautl -verify -in tmp.msg -inkey key.pub -pubin || exit 1
+    ${tss_pcrextend_cmd} -ha 16 -ic $RANDOM
+    ${tss_pcrextend_cmd} -ha 5 -halg sha1 -ic $RANDOM
+    ${tss_pcrextend_cmd} -ha 9 -halg sha384 -ic $RANDOM
+    echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg || exit 1
+    openssl rsautl -verify -in tmp.msg -inkey key.pub -pubin || exit 1
+    ${tss_pcrextend_cmd} -ha 1 -halg sha1 -ic $RANDOM
+    echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg && exit 1
+    ##
+    # Check a smaller PCR lock with no auth
+    ##
+    ${bindir}/create_tpm2_key ${n} --pcr-lock 2,4,7,10 --pcr-lock sha1:1,3 key.tpm || exit 1
+    openssl rsa -engine tpm2 -inform engine -in key.tpm -pubout -out key.pub || exit 1
+    echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg || exit 1
+    openssl rsautl -verify -in tmp.msg -inkey key.pub -pubin || exit 1
+    ${tss_pcrextend_cmd} -ha 4 -halg sha256 -ic $RANDOM
+    echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && exit 1
 done
+
+exit 0
