@@ -151,7 +151,7 @@ TSS_##TYPE##_Marshal(const TYPE *source, UINT16 *written,	\
 								\
 	*buffer += offset;					\
 	*size -= offset;					\
-	*written = offset;					\
+	*written += offset;					\
 								\
 	return rc;						\
 }
