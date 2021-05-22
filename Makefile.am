@@ -41,4 +41,4 @@ $(builddir)/%.1: $(srcdir)/%.1.in $(top_builddir)/%
 install-data-hook:
 	cd $(DESTDIR)$(openssl_enginedir) && $(LN_S) -f libtpm2@SHREXT@ tpm2@SHREXT@
 
-SUBDIRS = tests
+SUBDIRS = tests doc

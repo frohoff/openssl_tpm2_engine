@@ -128,6 +128,8 @@ fi
 AC_PATH_PROG(TPMSERVER, tpm_server,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
 AC_PATH_PROG(SWTPM, swtpm,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
 AC_PATH_PROG(SWTPM_IOCTL, swtpm_ioctl,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
+AC_CHECK_PROG(XML2RFC, xml2rfc, xml2rfc)
+AM_CONDITIONAL(HAVE_XML2RFC, test -n "${XML2RFC}")
 CFLAGS="$CFLAGS -Wall"
 SHREXT=$shrext_cmds
 AC_SUBST(CFLAGS)
@@ -147,7 +149,7 @@ fi
 
 AC_SUBST(testtpm)
 
-AC_OUTPUT([Makefile tests/Makefile])
+AC_OUTPUT([Makefile tests/Makefile doc/Makefile])
 
 cat <<EOF
 
