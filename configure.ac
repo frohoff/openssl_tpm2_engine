@@ -50,6 +50,11 @@ AC_ARG_WITH(openssl,
 	 AC_SUBST(OPENSSL_INCLUDE_DIR)])
 
 AC_LANG(C)
+
+PKG_CHECK_MODULES([DEPS], [libcrypto >= 3.0.0],
+                  [ac_have_openssl3=1],
+		  [PKG_CHECK_MODULES([DEPS], [libcrypto])])
+
 AC_ARG_WITH(
 	[enginesdir],
 	[AC_HELP_STRING([--with-enginesdir], [OpenSSL engines directory])],
@@ -94,6 +99,8 @@ AC_SEARCH_LIBS([TSS_Create], [tss ibmtss], [
 	    ])
 ])
 AM_CONDITIONAL(HAVE_IBM_TSS, test "$tsslibs" = "IBM")
+
+AM_CONDITIONAL(HAVE_OPENSSL3, test "$ac_have_openssl3" = "1")
 
 AC_DISABLE_STATIC
 AC_PROG_CC_STDC

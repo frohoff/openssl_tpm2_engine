@@ -9,6 +9,10 @@ man1_MANS = create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
 CLEANFILES = $(man1_MANS)
 endif
 
+if HAVE_OPENSSL3
+CFLAGS+= -DOPENSSL_API_COMPAT=0x10100000L
+endif
+
 openssl_engine_LTLIBRARIES=libtpm2.la
 bin_PROGRAMS=create_tpm2_key load_tpm2_key seal_tpm2_data unseal_tpm2_data
 openssl_enginedir=@enginesdir@
