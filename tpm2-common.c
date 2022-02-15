@@ -1489,7 +1489,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		rc = tpm2_create(&tssContext, ad->dir);
 		if (rc) {
 			reason="tpm2_create";
-			goto import_err;
+			goto import_no_flush_err;
 		}
 
 		parentHandle = tpm2_handle_int(tssContext, ad->parent);
@@ -1531,6 +1531,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 
 	import_err:
 		tpm2_flush_srk(tssContext, parentHandle);
+	import_no_flush_err:
 		TSS_Delete(tssContext);
 		if (rc) {
 			tpm2_error(rc, reason);
