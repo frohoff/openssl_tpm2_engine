@@ -14,7 +14,7 @@ bindir=${srcdir}/..
 
 
 for curve in $(${bindir}/create_tpm2_key --list-curves); do
-    if openssl ecparam -name ${curve} 2>&1 | grep -v 'unknown curve'; then
+    if openssl ecparam -name ${curve} 2>&1 | egrep -v '(invalid|unknown) curve'; then
 	continue
     fi
     echo "Checking curve ${curve}"

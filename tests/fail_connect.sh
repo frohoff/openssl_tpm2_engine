@@ -41,7 +41,7 @@ QL4QAdW9Ac4kKt4=
 # conversion to public key doesn't actually contact the TPM
 # so this should succeed
 ##
-openssl rsa -engine tpm2 -inform engine -in tmp.tpm -pubout -out tmp.pub 2> tmp.txt
+openssl pkey -engine tpm2 -inform engine -in tmp.tpm -pubout -out tmp.pub 2> tmp.txt
 if [ $? -ne 0 ]; then
     echo "TPM key import failed with $?"
     cat tmp.txt
@@ -51,7 +51,7 @@ fi
 # key operation does contact the TPM and should fail
 ##
 echo "This is a message" |\
-openssl rsautl -sign -engine tpm2 -keyform engine -inkey tmp.tpm -out tmp.msg 2> tmp.txt
+openssl pkeyutl -sign -engine tpm2 -keyform engine -inkey tmp.tpm -out tmp.msg 2> tmp.txt
 if [ $? -ne 1 ]; then
     echo "TPM key signing failed with $?"
     cat tmp.txt

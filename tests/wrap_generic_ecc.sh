@@ -9,7 +9,7 @@ bindir=${srcdir}/..
 # 3. Create a self signed x509 certificate
 # 4. verify the certificate
 for curve in $(${bindir}/create_tpm2_key --list-curves); do
-    if openssl ecparam -name ${curve} 2>&1 | grep 'unknown curve'; then
+    if openssl ecparam -name ${curve} 2>&1 | egrep '(invalid|unknown) curve'; then
 	continue
     fi
     openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:${curve} -out key.priv && \

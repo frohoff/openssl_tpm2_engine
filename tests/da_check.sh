@@ -13,7 +13,7 @@ ${bindir}/create_tpm2_key --rsa --da -a -k passw0rd key.tpm || exit 1
 count=1;
 while true; do
     echo "This is a message" | 
-    openssl rsautl -sign -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passwrd -out tmp.msg 2>tmp.txt
+    openssl pkeyutl -sign -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passwrd -out tmp.msg 2>tmp.txt
     val=$?
     cat tmp.txt
     if [ $val -ne 1 ]; then
@@ -39,7 +39,7 @@ done
 echo "Locked out after $count tries"
 # try with correct password, should still be locked out
 echo "This is a message" | 
-openssl rsautl -sign -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg 2>tmp.txt
+openssl pkeyutl -sign -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg 2>tmp.txt
 val=$?
 cat tmp.txt
 if [ $val -ne 1 ]; then
