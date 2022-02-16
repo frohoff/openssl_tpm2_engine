@@ -103,7 +103,11 @@ void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)
 #endif
 	}
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+	EVP_PKEY_set1_EC_KEY(pkey, eck);
+#else
 	EC_KEY_free(eck);
+#endif
 }
 
 static void tpm2_ecc_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,

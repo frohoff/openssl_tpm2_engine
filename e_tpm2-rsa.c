@@ -130,8 +130,12 @@ void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
 
 	RSA_set_ex_data(rsa, ex_app_data, data);
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000
+	EVP_PKEY_set1_RSA(pkey, rsa);
+#else
 	/* release the reference EVP_PKEY_get1_RSA obtained */
 	RSA_free(rsa);
+#endif
 }
 
 static void tpm2_rsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
