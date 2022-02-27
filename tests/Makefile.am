@@ -26,6 +26,7 @@ TESTS += check_curves.sh \
 	check_rsa_oaep_pss.sh \
 	restricted_parent.sh \
 	seal_unseal.sh \
+	dynamic_engine.sh \
 	stop_sw_tpm.sh
 
 fail_connect.sh: tpm_server_found
