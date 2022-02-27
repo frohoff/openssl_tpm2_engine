@@ -56,6 +56,7 @@ static EC_KEY_METHOD *tpm2_eck = NULL;
 
 /* varibles used to get/set CRYPTO_EX_DATA values */
 static int ec_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
+static int active_keys = 0;
 
 static TPM_HANDLE tpm2_load_key_from_ecc(const EC_KEY *eck,
 					 TSS_CONTEXT **tssContext, char **auth,
@@ -103,6 +104,7 @@ void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)
 #endif
 	}
 
+	active_keys++;
 #if OPENSSL_VERSION_NUMBER >= 0x30000000
 	EVP_PKEY_set1_EC_KEY(pkey, eck);
 #else
@@ -118,6 +120,7 @@ static void tpm2_ecc_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 	if (!data)
 		return;
 
+	--active_keys;
 	tpm2_delete(data);
 }
 
@@ -352,6 +355,10 @@ err:
 
 void tpm2_teardown_ecc_methods(void)
 {
+	if (active_keys != 0) {
+		fprintf(stderr, "ERROR: engine torn down while keys active\n");
+		exit(1);
+	}
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	if (tpm2_ecdsa) {
 		ECDSA_METHOD_free(tpm2_ecdsa);

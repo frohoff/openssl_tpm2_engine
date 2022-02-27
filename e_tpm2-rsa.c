@@ -27,6 +27,7 @@
 static int ex_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
 
 RSA_METHOD *tpm2_rsa = NULL;
+static int active_keys = 0;
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 /* rsa functions */
@@ -129,6 +130,7 @@ void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
 #endif
 
 	RSA_set_ex_data(rsa, ex_app_data, data);
+	active_keys++;
 
 #if OPENSSL_VERSION_NUMBER >= 0x30000000
 	EVP_PKEY_set1_RSA(pkey, rsa);
@@ -145,6 +147,8 @@ static void tpm2_rsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 
 	if (!app_data)
 		return;
+
+	--active_keys;
 
 	tpm2_delete(app_data);
 }
@@ -343,6 +347,10 @@ err:
 
 void tpm2_teardown_rsa_methods(void)
 {
+	if (active_keys != 0) {
+		fprintf(stderr, "ERROR: engine torn down while keys active\n");
+		exit(1);
+	}
 #if OPENSSL_VERSION_NUMBER >= 0x10100000
 	if (tpm2_rsa) {
 		RSA_meth_free(tpm2_rsa);
