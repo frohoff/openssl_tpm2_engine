@@ -117,7 +117,7 @@ static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
 	return tpm2_load_key(tssContext, app_data, srk_auth, NULL);
 }
 
-void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
+void tpm2_bind_key_to_engine_rsa(ENGINE *e, EVP_PKEY *pkey, struct app_data *data)
 {
 	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
 
@@ -128,6 +128,8 @@ void tpm2_bind_key_to_engine_rsa(EVP_PKEY *pkey, void *data)
 #else
 	RSA_set_method(rsa, tpm2_rsa);
 #endif
+	data->e = e;
+	ENGINE_init(e);
 
 	RSA_set_ex_data(rsa, ex_app_data, data);
 	active_keys++;
@@ -149,6 +151,7 @@ static void tpm2_rsa_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 		return;
 
 	--active_keys;
+	ENGINE_finish(app_data->e);
 
 	tpm2_delete(app_data);
 }

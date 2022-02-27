@@ -116,14 +116,14 @@ static const ENGINE_CMD_DEFN tpm2_cmd_defns[] = {
 	{0, NULL, NULL, 0}
 };
 
-void tpm2_bind_key_to_engine(EVP_PKEY *pkey, void *data)
+void tpm2_bind_key_to_engine(ENGINE *e, EVP_PKEY *pkey, struct app_data *data)
 {
 	switch (EVP_PKEY_id(pkey)) {
 	case EVP_PKEY_RSA:
-		tpm2_bind_key_to_engine_rsa(pkey, data);
+		tpm2_bind_key_to_engine_rsa(e, pkey, data);
 		break;
 	case EVP_PKEY_EC:
-		tpm2_bind_key_to_engine_ecc(pkey, data);
+		tpm2_bind_key_to_engine_ecc(e, pkey, data);
 		break;
 	default:
 		break;
@@ -193,7 +193,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	if (askauth)
 		app_data->auth = tpm2_get_auth(ui, "TPM NV Key Password: ", cb_data);
 
-	tpm2_bind_key_to_engine(pkey, app_data);
+	tpm2_bind_key_to_engine(e, pkey, app_data);
 
  out:
 	*ppkey = pkey;
@@ -241,7 +241,7 @@ static int tpm2_engine_load_key_core(ENGINE *e, EVP_PKEY **ppkey,
 		return 0;
 
 	if (!public_only)
-		tpm2_bind_key_to_engine(pkey, app_data);
+		tpm2_bind_key_to_engine(e, pkey, app_data);
 
 	*ppkey = pkey;
 	return 1;

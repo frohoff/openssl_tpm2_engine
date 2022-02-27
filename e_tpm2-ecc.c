@@ -12,6 +12,7 @@
 #include <openssl/ec.h>
 #include <openssl/ecdsa.h>
 #include <openssl/ecdh.h>
+#include <openssl/engine.h>
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include <openssl/bn.h>
@@ -85,7 +86,7 @@ static TPM_HANDLE tpm2_load_key_from_ecc(const EC_KEY *eck,
 	return tpm2_load_key(tssContext, app_data, srk_auth, NULL);
 }
 
-void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)
+void tpm2_bind_key_to_engine_ecc(ENGINE *e, EVP_PKEY *pkey, struct app_data *data)
 {
 	EC_KEY *eck = EVP_PKEY_get1_EC_KEY(pkey);
 
@@ -104,6 +105,8 @@ void tpm2_bind_key_to_engine_ecc(EVP_PKEY *pkey, void *data)
 #endif
 	}
 
+	data->e = e;
+	ENGINE_init(e);
 	active_keys++;
 #if OPENSSL_VERSION_NUMBER >= 0x30000000
 	EVP_PKEY_set1_EC_KEY(pkey, eck);
@@ -121,6 +124,7 @@ static void tpm2_ecc_free(void *parent, void *ptr, CRYPTO_EX_DATA *ad,
 		return;
 
 	--active_keys;
+	ENGINE_finish(data->e);
 	tpm2_delete(data);
 }
 

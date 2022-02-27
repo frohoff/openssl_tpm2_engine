@@ -40,6 +40,7 @@ struct app_data {
 	int num_commands;
 	unsigned int name_alg;
 	struct policy_command *commands;
+	ENGINE *e;
 };
 
 void tpm2_error(TPM_RC rc, const char *reason);
