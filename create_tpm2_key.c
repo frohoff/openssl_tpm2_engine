@@ -821,10 +821,8 @@ int main(int argc, char **argv)
 	ENCRYPTED_SECRET_2B secret, *enc_secret = NULL;
 	int restricted = 0;
 	char *parent_str = NULL;
-	TPML_PCR_SELECTION pcr_lock;
+	TPML_PCR_SELECTION pcr_lock = { 0 };
 	int has_policy = 0;
-
-	pcr_lock.count = 0;
 
 	OpenSSL_add_all_digests();
 	/* may be needed to decrypt the key */
