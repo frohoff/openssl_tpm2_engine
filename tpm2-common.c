@@ -1578,7 +1578,8 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	if (ppkey)
 		EVP_PKEY_free(*ppkey);
  err_free:
-	*ppkey = NULL;
+	if (ppkey)
+		*ppkey = NULL;
 
 	tpm2_delete(ad);
  err:
