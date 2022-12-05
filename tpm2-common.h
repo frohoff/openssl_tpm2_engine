@@ -9,6 +9,8 @@
  * not a TPM error, so don't process the rc as one */
 #define NOT_TPM_ERROR (0xffffffff)
 
+extern TPM_ALG_ID name_alg;
+
 struct policy_command {
 	TPM_CC code;
 	INT32 size;
@@ -95,4 +97,12 @@ TPM_RC tpm2_pcr_lock_policy(TSS_CONTEXT *tssContext,
 			    STACK_OF(TSSOPTPOLICY) *sk,
 			    TPMT_HA *digest);
 void tpm2_add_auth_policy(STACK_OF(TSSOPTPOLICY) *sk, TPMT_HA *digest);
+EVP_PKEY *openssl_read_public_key(char *filename);
+void tpm2_public_template_rsa(TPMT_PUBLIC *pub);
+void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve);
+TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey);
+TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey);
+TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey);
+void openssl_print_errors();
+TPM_RC tpm2_ObjectPublic_GetName(NAME_2B *name,	 TPMT_PUBLIC *tpmtPublic);
 #endif

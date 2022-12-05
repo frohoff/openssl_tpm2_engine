@@ -20,8 +20,6 @@
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
-static TPM_ALG_ID name_alg = TPM_ALG_SHA256;
-
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
 	{"auth-parent", 1, 0, 'b'},

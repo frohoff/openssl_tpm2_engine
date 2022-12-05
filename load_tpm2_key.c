@@ -57,14 +57,6 @@ usage(char *argv0)
 	exit(-1);
 }
 
-void
-openssl_print_errors()
-{
-	ERR_load_ERR_strings();
-	ERR_load_crypto_strings();
-	ERR_print_errors_fp(stderr);
-}
-
 int main(int argc, char **argv)
 {
 	char *filename;
