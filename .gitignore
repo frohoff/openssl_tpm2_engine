@@ -35,3 +35,5 @@ tests/*.bin
 tests/*.tpm
 tests/*.txt
 tests/NVChip
+doc/draft-bottomley-tpm2-keys.html
+doc/draft-bottomley-tpm2-keys.txt

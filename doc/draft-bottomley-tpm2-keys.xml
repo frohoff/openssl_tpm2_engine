@@ -23,7 +23,7 @@ An alternate method (rfc include) is described in the references.
         <email>James.Bottomley@HansenPartnership.com</email>
       </address>
     </author>
-    <date month="May" year="2021"/>
+    <date month="December" year="2022"/>
     <area>Security</area>
     <keyword>I-D</keyword>
     <keyword>Internet-Draft</keyword>
@@ -107,6 +107,7 @@ An alternate method (rfc include) is described in the references.
     emptyAuth   [0] EXPLICIT BOOLEAN OPTIONAL
     policy      [1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL
     secret      [2] EXPLICIT OCTET STRING OPTIONAL
+    authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL
     parent      INTEGER
     pubkey      OCTET STRING
     privkey     OCTET STRING
@@ -166,7 +167,7 @@ An alternate method (rfc include) is described in the references.
 	    This MUST be present if the TPM key has a policy hash
 	    because it describes to the implementation how to
 	    construct the policy.  The forms of the policy statement
-	    are described in section <xref target="policy"/>.
+	    are described in <xref target="policy"/>.
 	  </t>
 	</section>
 	<section title="secret">
@@ -184,6 +185,16 @@ An alternate method (rfc include) is described in the references.
 	    outer wrapper encrypted to the parent key using
 	    inSymSeed. The secret parameter is the fully marshalled
 	    TPM2B_ENCRYPTED_SECRET form of inSymSeed.
+	  </t>
+	</section>
+	<section title="authPolicy">
+	  <t>
+	    This SHOULD be present if the TPMkey policy contains a
+	    TPM2_PolicyAuthorize statement because it contains signed
+	    policies that could be used to satisfy the TPM key policy.
+	    The forms of the auth{olicy statement are described in
+	    <xref target="signed-policy"/>.  If the TPM key
+	    has no policy hash then this MUST NOT be present.
 	  </t>
 	</section>
 	<section title="parent">
@@ -243,7 +254,7 @@ An alternate method (rfc include) is described in the references.
 	optional elements for policy statements which are not
 	supported by this standard (such as TPM2_PolicyAuthorize).
       </t>
-      <section title="TPMPolicy Syntax">
+      <section anchor="TPMPolicy" title="TPMPolicy Syntax">
 	<figure><artwork>
  TPMPolicy ::= SEQUENCE {
     CommandCode   [0] EXPLICIT INTEGER
@@ -271,11 +282,57 @@ An alternate method (rfc include) is described in the references.
 	    Commands which have no body, such as TPM2_AuthVal, MUST be
 	    specified as a zero length OCTET STRING
 	  </t>
+	  <t>
+	    Note that there are some commands for which the simple
+	    body of the TPM policy command does not provide enough
+	    information to execute the policy command.  A classic
+	    example is TPM2_PolicyAuthorize, whose body consists of a
+	    key name, a policyRef nonce and a signature. However, the
+	    implementation needs to know the actual key, not just the
+	    name, to implement the policy.  Commands whose
+	    CommandPolicy must be marshalled differently are noted in
+	    <xref target="policy-exceptions"/>.
+	  </t>
+	</section>
+      </section>
+      <section anchor="policy-exceptions" title="PolicyCommand Exceptions">
+	<t>
+	  For some TPM2_Policy... commands, the information required
+	  to formulate the policy cannot be extracted from the body of
+	  the command and so additional information must be supplied,
+	  meaning these commands deviate from the <xref
+	  target="TPM2.0"/> policy body specifications.  The
+	  CommandPolicy format for these exceptional commands is
+	  documented below.
+	</t>
+	<section title="TPM2_PolicyAuthorize">
+	  <t>
+	    According to <xref target="TPM2.0"/> the body of this
+	    command consists of TPM2B_DIGEST approvedPolicy,
+	    TPM2B_NONCE policyRef, TPM2B_NAME keySign and
+	    TPM_TK_VERIFIED checkTicket.  However, implementations
+	    must construct checkTicket at the time of policy execution
+	    from the public key of keySign and the signed policy hash.
+	    Additionally, implementations constructing a signed policy
+	    need to know the sequence of policy steps they must
+	    execute to produce approvedPolicy, but do not need to know
+	    its value because the construction steps will either fail
+	    or the end policy session will have the required hash.
+	    The implementation must know this end policyHash to
+	    construct the signature over it, but this information does
+	    not need to be stored in CommandPolicy.
+	  </t>
+	  <t>
+	    The format of CommandPolicy for TPM2_PolicyAuthorize MUST
+	    be TPM2B_PUBLIC keySign, TPM2B_DIGEST policyRef, TPMT_SIGNATURE
+	    policySignature.
+	  </t>
 	</section>
       </section>
       <section title="Policy Implementation Considerations">
 	<t>
-	  The policy hash for AND based policies is constructed by extension of the prior policy hash
+	  The policy hash for AND based policies is constructed by
+	  extension of the prior policy hash
 	</t>
 	<figure><artwork>
   newHash = HASH ( oldHash || policyHash )
@@ -283,7 +340,7 @@ An alternate method (rfc include) is described in the references.
 	<t>
 	  where policyHash is usually simply the hash of the fully
 	  marshalled policy command (including the CommandCode).
-	  However, this isn't true for TPM2_PolicyCounterTimer() so
+	  However, this isn't true for TPM2_PolicyCounterTimer so
 	  always consult the <xref target="TPM2.0"/> specifications
 	  for how to construct the policyHash.
 	</t>
@@ -294,6 +351,13 @@ An alternate method (rfc include) is described in the references.
 	  met), that failure should be reported in as much detail as
 	  possible and processing of the key should fail at that
 	  point.
+	</t>
+	<t>
+	  If signed policies are present, the first policy statement
+	  MUST be TPM2_PolicyAuthorize giving the public key, the
+	  nonce and and having an empty signature.
+	  TPM_PolicyAuthorize() MAY NOT appear in any subsequent
+	  position.
 	</t>
 	<section title="Authorization Policy">
 	  <t>
@@ -308,6 +372,150 @@ An alternate method (rfc include) is described in the references.
 	    sessions or not.  If the policy does not require an
 	    authorization then the emptyAuth parameter MUST be set to
 	    true.
+	  </t>
+	</section>
+      </section>
+    </section>
+    <section anchor="signed-policy" title="Signed Policy Specification">
+      <t>
+	One feature of TPM policy execution is the command
+	TPM2_PolicyAuthorize does not operate by extending the
+	current policy hash, it completely replaces it with a hash of
+	the signing key and a nonce called the policyRef.  In order
+	for this replacement to happen, TPM2_PolicyAuthorize must be
+	presented with a ticket confirming verification of a signature
+	over the old policy hash and the nonce.  Since anyone
+	possessing the private key named in the policy hash can sign a
+	new policy to present, the key can have multiple signed
+	policies, any or all of which might succeed, so a new
+	structure had to be introduced to store current signed
+	policies.
+      </t>
+      <section title="TPMAuthPolicy Syntax">
+	<figure><artwork>
+ TPMAuthPolicy ::= SEQUENCE {
+    Name    [0] EXPLICIT UTF8STRING OPTIONAL
+    Policy  [1] EXPLICIT SEQUENCE OF TPMPolicy
+ }
+        </artwork></figure>
+	<t>
+	  The Fields of type TPMAuthPolicy have the following meanings:
+	</t>
+	<section title="Name">
+	  <t>
+	    An optional string name for the current policy which is
+	    only used for display purposes, MAY be used as a user
+	    visible mnemonic for the actual policy.
+	  </t>
+	</section>
+	<section title="Policy">
+	  <t>
+	    A sequence of TPMPolicy statements (see <xref
+	    target="TPMPolicy"/>) which MUST end with a
+	    PolicyAuthorize statement whose signature is over the hash
+	    of the current policy excluding the PolicyAuthorize
+	    statement and the nonce specified at the beginning of the
+	    TPMKey policy.  There MUST be no other
+	    TPM2_PolicyAuthorize statements in the intermediate policy
+	    steps.  There MAY be an initial TPM2_PolicyAuthorize
+	    statement containing a different public key (because this
+	    causes complexity building signed policy chains,
+	    implementations MAY choose to allow only a single policy
+	    signing key, in which case there MAY NOT be an initial
+	    TPM2_PolicyAuthorize statement).
+	  </t>
+	</section>
+      </section>
+      <section title="Signed Policy Implementation Considerations">
+	<t>
+	  The key can only be used if one of the policies in TPMKey
+	  authPolicy actually succeeds.  The implementation SHOULD try
+	  each policy in authPolicy sequentially. If the policy fails
+	  to match the implementation SHOULD try the next policy.  If
+	  all statement succeed, the implementation should then
+	  execute the final TPM2_PolicyAuthorize statement and then
+	  begin executing the policy statements in TPMKeyPolicy
+	  excluding the initial TPM2_PolicyAuthorize one (if there
+	  are any subsequent statements).
+	</t>
+	<t>
+	  Because policies are tried sequentially, implementations
+	  SHOULD order the policies such that the most likely to
+	  succeed appears first. For instance, if the key is used to
+	  unlock a disk and is tied by policy to the hash of the OS
+	  kernel, then the policy tied to the current kernel should
+	  appear first followed by subsequent policies tied to older
+	  kernels because the most likely kernel to be booted is the
+	  current one.
+	</t>
+	<t>
+	  Since the policy order will likely change when a new policy
+	  is added (in the kernel example, when a kernel is updated,
+	  the newly added kernel becomes current and the signed policy
+	  tied to this kernel should become the first one in the
+	  TPMkey), users should keep track of policies using the
+	  optional mnemonic name and not rely on position in the
+	  TPMAuthPolicy sequence.
+	</t>
+	<section title="Authorization Policy">
+	  <t>
+	    There may now be multiple possible policies which
+	    authorize the key, some of which might contain
+	    TPM2_PolicyAuthValue requirements (passing in a password) and
+	    others of which might not, emptyAuth MUST not be set if
+	    the TPMKey contains an Authorization Secret (password),
+	    even if testing knowledge of such a secret may not be
+	    required by signed policy.  Implementations MAY choose to
+	    scan the likely policies to see whether to prompt for a
+	    password or MAY choose to prompt based on emptyAuth.  The
+	    latter is more likely to be successful, because most
+	    implementations will have a password prompt at key load
+	    time which may be some time before the key is actually
+	    used, by which time the list of successful policies may be
+	    different due to changes on the system.
+	  </t>
+	  <t>
+	    The most common use for TPM2_PolicyAuthValue is as a
+	    backup policy when all other policies tied to system
+	    configuration fail.  For this use case, a password
+	    prompted for is almost never used, except in the rare
+	    event the system gets into a state where none of the other
+	    policies apply.  If an implementation always prompts for a
+	    password based on emptyAuth, then most of the time the
+	    prompted for password will not be used.  For this use
+	    case, consumers may safely pass in an empty password when
+	    the implementation asks and only provide the real password
+	    if all other policies fail.  In the kernel boot example
+	    this would mean that the entity that unlocks the disk
+	    should first try the key with an empty password, assuming
+	    one non-password based policy will succeed and only go
+	    back and ask the user for a password if the disk unlock
+	    fails.
+	  </t>
+	</section>
+	<section title="Signed Policy Revocation">
+	  <t>
+	    The signature in a TPM2_PolicyAuthorize statement has no
+	    expiry or revocation capabilities.  Consumers should
+	    remember that simply removing a signed policy from the key
+	    does not guarantee that the removed policy will never be
+	    used.  Any subsequent consumer who obtains the policy
+	    signature could potentially add the removed policy back to
+	    the key.  Therefore, use cases which may need to expire or
+	    revoke the policy SHOULD build into the policy specific
+	    expiration or revocation criteria using TPM policy
+	    statements.
+	  </t>
+	  <t>
+	    The easiest policy statement for expiration is to use
+	    TPM2_PolicyCounterTimer.  Users should remember that the
+	    TPM time is guaranteed to be monotonic, but the TPM timer
+	    does not tick while the machine is powered down and any
+	    user may arbitrarily increase (but never decrease) the TPM
+	    clock count.  It is recommended that policies tied to
+	    booting a system (as in the kernel boot disk unlock above)
+	    should base their expiration on reboot count rather than
+	    the TPM clock.
 	  </t>
 	</section>
       </section>
