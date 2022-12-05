@@ -113,4 +113,6 @@ void openssl_print_errors();
 TPM_RC tpm2_ObjectPublic_GetName(NAME_2B *name,	 TPMT_PUBLIC *tpmtPublic);
 TPM_RC tpm2_add_signed_policy(STACK_OF(TSSOPTPOLICY) *sk, char *key_file,
 			      TPMT_HA *digest);
+TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
+			      TSSAUTHPOLICY *ap, TPMT_HA *digest);
 #endif

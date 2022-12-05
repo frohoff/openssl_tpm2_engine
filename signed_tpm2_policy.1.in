@@ -1,0 +1,44 @@
+[name]
+signed_tpm2_policy - add, remove and list signed policies
+
+[description]
+
+<cmd> is one of add, rm or ls and [arg] is the private key for the add
+command or the policy number for the rm command.
+
+
+
+[PCR Values]
+
+The PCR values are specified as
+
+ <bank>:<list>
+
+Where <bank> is any supported PCR hash bank and list specifies the
+PCRs to lock the key to as both comma separated individual values as
+well as comma separated ranges.  So
+
+ sha256:1,3 means PCRs 1 and 3 in the sha256 bank
+
+ sha512:1,3-5 means PCRs 1,3,4 and 5 in the sha512 bank
+
+[examples]
+
+list all signed policies:
+
+    signed_tpm2_policy ls key.tpm
+
+The output is a numbered list of policies (with optional names)
+
+remove the first policy
+
+    signed_tpm2_policy rm key.tpm 1
+
+add a new policy with name 'thispolicy' locked to pcr16 using the
+private policy.key:
+
+    signed_tpm2_policy add --name thispolicy --pcr-lock sha256:16 key.tmp policy.key
+
+[see also]
+
+create_tpm2_key(1)

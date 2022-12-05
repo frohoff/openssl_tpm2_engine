@@ -21,6 +21,7 @@ create_tpm2_key
 load_tpm2_key
 seal_tpm2_data
 unseal_tpm2_data
+signed_tpm2_policy
 test-driver
 tests/*.log
 tests/*.trs

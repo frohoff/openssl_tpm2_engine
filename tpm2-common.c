@@ -1569,6 +1569,66 @@ static const EVP_MD *tpm2_md(TPM_ALG_ID alg)
 	}
 }
 
+TPM_RC tpm2_sign_digest(EVP_PKEY *pkey, TPMT_HA *digest, TPMT_SIGNATURE *sig)
+{
+	EVP_PKEY_CTX *ctx;
+	const int pkey_id = EVP_PKEY_id(pkey);
+	size_t size;
+
+	ctx = EVP_PKEY_CTX_new(pkey, NULL);
+	if (!ctx)
+		return TPM_RC_MEMORY;
+
+	EVP_PKEY_sign_init(ctx);
+	EVP_PKEY_CTX_set_signature_md(ctx, tpm2_md(digest->hashAlg));
+	if (pkey_id == EVP_PKEY_RSA) {
+		sig->sigAlg = TPM_ALG_RSASSA;
+		EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_PADDING);
+		sig->signature.rsassa.hash = digest->hashAlg;
+		size = MAX_RSA_KEY_BYTES;
+		EVP_PKEY_sign(ctx, VAL_2B(sig->signature.rsassa.sig, buffer),
+			      &size,
+			      (uint8_t *)&digest->digest,
+			      TSS_GetDigestSize(digest->hashAlg));
+		VAL_2B(sig->signature.rsassa.sig, size) = size;
+	} else if (pkey_id == EVP_PKEY_EC) {
+		unsigned char sigbuf[1024];
+		const unsigned char *p;
+		ECDSA_SIG *es = ECDSA_SIG_new();
+		const BIGNUM *r, *s;
+
+		sig->sigAlg = TPM_ALG_ECDSA;
+		sig->signature.ecdsa.hash = digest->hashAlg;
+		size = sizeof(sigbuf);
+		EVP_PKEY_sign(ctx, sigbuf, &size, (uint8_t *)&digest->digest,
+			      TSS_GetDigestSize(digest->hashAlg));
+		/* this is all openssl crap: it returns der form unlike RSA
+		 * which returns raw form */
+		p = sigbuf;
+		d2i_ECDSA_SIG(&es, &p, size);
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+		r = es->r;
+		s = es->s;
+#else
+		r = ECDSA_SIG_get0_r(es);
+		s = ECDSA_SIG_get0_s(es);
+#endif
+		VAL_2B(sig->signature.ecdsa.signatureR, size) =
+			BN_bn2bin(r, VAL_2B(sig->signature.ecdsa.signatureR,
+					    buffer));
+		VAL_2B(sig->signature.ecdsa.signatureS, size) =
+			BN_bn2bin(s, VAL_2B(sig->signature.ecdsa.signatureS,
+					    buffer));
+		ECDSA_SIG_free(es);
+	} else {
+		fprintf(stderr, "pkey has unknown signing algorithm %d\n", pkey_id);
+		exit(1);
+	}
+	EVP_PKEY_CTX_free(ctx);
+
+	return TPM_RC_SUCCESS;
+}
+
 int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
 			  const char *srk_auth, int get_key_auth,
@@ -2149,6 +2209,135 @@ out_munmap:
 out:
 	close(fd);
 	return rc;
+}
+
+TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
+			      TSSAUTHPOLICY *ap, TPMT_HA *digest)
+{
+	BIO *bf;
+	TSSPRIVKEY *tpk;
+	EVP_PKEY *pkey;
+	TSSOPTPOLICY *policy;
+	BYTE *buffer;
+	INT32 size;
+	TPM2B_PUBLIC pub;
+	DIGEST_2B nonce;
+	TPMT_HA hash;
+	TPM_RC rc;
+	TPMT_SIGNATURE sig;
+	NAME_2B name;
+	const TPM_CC cc = TPM_CC_PolicyAuthorize;
+	BYTE buf[1024];
+	UINT16 written = 0;
+
+	bf = BIO_new_file(tpmkey, "r");
+	if (!bf) {
+		fprintf(stderr, "File %s does not exist or cannot be read\n",
+			tpmkey);
+		return 0;
+	}
+
+	tpk = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
+	if (!tpk) {
+		BIO_seek(bf, 0);
+		ERR_clear_error();
+		tpk = ASN1_item_d2i_bio(ASN1_ITEM_rptr(TSSPRIVKEY), bf, NULL);
+	}
+	BIO_free(bf);
+	if (!tpk) {
+		fprintf(stderr, "Cannot parse file as TPM key\n");
+		return 0;
+	}
+	if (!tpk->policy || sk_TSSOPTPOLICY_num(tpk->policy) <= 0) {
+		fprintf(stderr, "TPM Key has no policy\n");
+		goto err_free_tpmkey;
+	}
+
+	policy = sk_TSSOPTPOLICY_value(tpk->policy, 0);
+	if (ASN1_INTEGER_get(policy->CommandCode) != TPM_CC_PolicyAuthorize) {
+		fprintf(stderr, "TPM Key has no signed policy\n");
+		goto err_free_tpmkey;
+	}
+
+	buffer = policy->CommandPolicy->data;
+	size = policy->CommandPolicy->length;
+	rc = TPM2B_PUBLIC_Unmarshal(&pub, &buffer, &size, FALSE);
+	if (rc == TPM_RC_SUCCESS) {
+		rc = TPM2B_DIGEST_Unmarshal((TPM2B_DIGEST *)&nonce, &buffer, &size);
+	} else {
+		fprintf(stderr, "Unmarshal Failure on PolicyAuthorize public key\n");
+	}
+
+	if (rc != TPM_RC_SUCCESS) {
+		fprintf(stderr, "Unmarshal failure on PolicyAuthorize\n");
+		goto err_free_tpmkey;
+	}
+
+	bf = BIO_new_file(policykey, "r");
+	if (!bf) {
+		fprintf(stderr, "File %s does not exist or cannot be read\n",
+			policykey);
+		goto err_free_tpmkey;
+	}
+
+	pkey = PEM_read_bio_PrivateKey(bf, NULL, NULL, NULL);
+	BIO_free(bf);
+	if (!pkey) {
+		fprintf(stderr, "Could not get policy private key\n");
+		goto err_free_tpmkey;
+	}
+
+	/* the to be signed hash is HASH(approvedPolicy || nonce) */
+	hash.hashAlg = name_alg;
+	TSS_Hash_Generate(&hash,
+			  TSS_GetDigestSize(digest->hashAlg), &digest->digest,
+			  nonce.size, nonce.buffer,
+			  0, NULL);
+
+	rc = tpm2_sign_digest(pkey, &hash, &sig);
+	EVP_PKEY_free(pkey);
+	if (rc != TPM_RC_SUCCESS) {
+		fprintf(stderr, "Signing failed\n");
+		goto err_free_tpmkey;
+	}
+	tpm2_ObjectPublic_GetName(&name, &pub.publicArea);
+
+	size = sizeof(buf);
+	buffer = buf;
+	TSS_TPM_CC_Marshal(&cc, &written, &buffer, &size);
+	TSS_TPM2B_PUBLIC_Marshal(&pub, &written, &buffer, &size);
+	TSS_TPM2B_DIGEST_Marshal((TPM2B_DIGEST *)&nonce, &written, &buffer, &size);
+	TSS_TPMT_SIGNATURE_Marshal(&sig, &written, &buffer, &size);
+
+	policy = TSSOPTPOLICY_new();
+
+	ASN1_INTEGER_set(policy->CommandCode, cc);
+	ASN1_STRING_set(policy->CommandPolicy, buf + 4, written - 4);
+	sk_TSSOPTPOLICY_push(ap->policy, policy);
+
+	if (!tpk->authPolicy)
+		tpk->authPolicy = sk_TSSAUTHPOLICY_new_null();
+
+	/* insert at the beginning on the assumption we should try
+	 * latest policy addition first */
+	sk_TSSAUTHPOLICY_unshift(tpk->authPolicy, ap);
+
+	bf = BIO_new_file(tpmkey, "w");
+	if (bf == NULL) {
+		fprintf(stderr, "Failed to open key file %s for writing\n",
+			tpmkey);
+		goto err_free_tpmkey;
+	}
+	PEM_write_bio_TSSPRIVKEY(bf, tpk);
+	BIO_free(bf);
+
+	TSSPRIVKEY_free(tpk);
+	EVP_PKEY_free(pkey);
+	return 0;
+
+ err_free_tpmkey:
+	TSSPRIVKEY_free(tpk);
+	return 1;
 }
 
 void tpm2_free_policy(STACK_OF(TSSOPTPOLICY) *sk)
