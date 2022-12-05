@@ -156,8 +156,7 @@ int main(int argc, char **argv)
 
 	if (app_data->req_policy_session) {
 		rc = tpm2_init_session(tssContext, session,
-				       app_data->num_commands,
-				       app_data->commands, name_alg);
+				       app_data, name_alg);
 		if (rc) {
 			reason = "tpm2_init_session";
 			goto out_flush_session;

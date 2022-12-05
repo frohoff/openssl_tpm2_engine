@@ -61,29 +61,26 @@ static int active_keys = 0;
 
 static TPM_HANDLE tpm2_load_key_from_ecc(const EC_KEY *eck,
 					 TSS_CONTEXT **tssContext, char **auth,
-					 TPM_SE *sessionType, int *num_commands,
-					 struct policy_command **commands,
+					 TPM_SE *sessionType,
+					 struct app_data **app_data,
 					 TPM_ALG_ID *nameAlg)
 {
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	/*  const mess up in openssl 1.0.2 */
-	struct app_data *app_data = ECDSA_get_ex_data((EC_KEY *)eck,
-						      ec_app_data);
+	*app_data = ECDSA_get_ex_data((EC_KEY *)eck, ec_app_data);
 #else
-	struct app_data *app_data = EC_KEY_get_ex_data(eck, ec_app_data);
+	*app_data = EC_KEY_get_ex_data(eck, ec_app_data);
 #endif
 
-	if (!app_data)
+	if (!*app_data)
 		return 0;
 
-	*auth = app_data->auth;
-	*sessionType = app_data->req_policy_session ?
+	*auth = (*app_data)->auth;
+	*sessionType = (*app_data)->req_policy_session ?
 		       TPM_SE_POLICY : TPM_SE_HMAC;
-	*commands = app_data->commands;
-	*num_commands = app_data->num_commands;
-	*nameAlg = app_data->name_alg;
+	*nameAlg = (*app_data)->name_alg;
 
-	return tpm2_load_key(tssContext, app_data, srk_auth, NULL);
+	return tpm2_load_key(tssContext, *app_data, srk_auth, NULL);
 }
 
 void tpm2_bind_key_to_engine_ecc(ENGINE *e, EVP_PKEY *pkey, struct app_data *data)
@@ -143,9 +140,8 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	TPM_SE sessionType;
 	ECDSA_SIG *sig;
 	BIGNUM *r, *s;
-	int num_commands;
-	struct policy_command *commands;
 	TPM_ALG_ID nameAlg;
+	struct app_data *app_data;
 
 	/* The TPM insists on knowing the digest type, so
 	 * calculate that from the size */
@@ -170,8 +166,7 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 	}
 
 	keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
-					   &sessionType, &num_commands,
-					   &commands, &nameAlg);
+					   &sessionType, &app_data, &nameAlg);
 	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
 		return NULL;
@@ -189,7 +184,7 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 
 	if (sessionType == TPM_SE_POLICY) {
 		rc = tpm2_init_session(tssContext, authHandle,
-				       num_commands, commands, nameAlg);
+				       app_data, nameAlg);
 		if (rc)
 			goto out;
 	}
@@ -236,14 +231,12 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 	TPM_SE sessionType;
 	char *auth;
 	size_t len;
-	int num_commands;
-	struct policy_command *commands;
 	TPM_ALG_ID nameAlg;
+	struct app_data *app_data;
 	int ret;
 
 	keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
-					   &sessionType, &num_commands,
-					   &commands, &nameAlg);
+					   &sessionType, &app_data, &nameAlg);
 	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
 		return 0;
@@ -260,7 +253,7 @@ static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 
 	if (sessionType == TPM_SE_POLICY) {
 		rc = tpm2_init_session(tssContext, authHandle,
-				       num_commands, commands, nameAlg);
+				       app_data, nameAlg);
 		if (rc)
 			goto out;
 	}

@@ -98,23 +98,20 @@ static int tpm2_rsa_pub_enc(int flen,
 
 static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
 					 char **auth, TPM_SE *sessionType,
-					 int *num_commands,
-					 struct policy_command **commands,
+					 struct app_data **app_data,
 					 TPM_ALG_ID *nameAlg)
 {
-	struct app_data *app_data = RSA_get_ex_data(rsa, ex_app_data);
+	*app_data = RSA_get_ex_data(rsa, ex_app_data);
 
-	if (!app_data)
+	if (!*app_data)
 		return 0;
 
-	*auth = app_data->auth;
-	*sessionType = app_data->req_policy_session ?
+	*auth = (*app_data)->auth;
+	*sessionType = (*app_data)->req_policy_session ?
 		       TPM_SE_POLICY : TPM_SE_HMAC;
-	*commands = app_data->commands;
-	*num_commands = app_data->num_commands;
-	*nameAlg = app_data->name_alg;
+	*nameAlg = (*app_data)->name_alg;
 
-	return tpm2_load_key(tssContext, app_data, srk_auth, NULL);
+	return tpm2_load_key(tssContext, *app_data, srk_auth, NULL);
 }
 
 void tpm2_bind_key_to_engine_rsa(ENGINE *e, EVP_PKEY *pkey, struct app_data *data)
@@ -172,13 +169,11 @@ static int tpm2_rsa_priv_dec(int flen,
 	char *auth;
 	TPM_HANDLE authHandle;
 	TPM_SE sessionType;
-	int num_commands;
-	struct policy_command *commands;
 	TPM_ALG_ID nameAlg;
+	struct app_data *app_data;
 
 	keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
-					   &sessionType, &num_commands,
-					   &commands, &nameAlg);
+					   &sessionType, &app_data, &nameAlg);
 
 	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
@@ -210,7 +205,7 @@ static int tpm2_rsa_priv_dec(int flen,
 
 	if (sessionType == TPM_SE_POLICY) {
 		rc = tpm2_init_session(tssContext, authHandle,
-				       num_commands, commands, nameAlg);
+				       app_data, nameAlg);
 		if (rc)
 			goto out;
 	}
@@ -249,9 +244,8 @@ static int tpm2_rsa_priv_enc(int flen,
 	char *auth;
 	TPM_HANDLE authHandle;
 	TPM_SE sessionType;
-	int num_commands;
-	struct policy_command *commands;
 	TPM_ALG_ID nameAlg;
+	struct app_data *app_data;
 
 	/* this is slightly paradoxical that we're doing a Decrypt
 	 * operation: the only material difference between decrypt and
@@ -278,8 +272,7 @@ static int tpm2_rsa_priv_enc(int flen,
 	}
 
 	keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
-					   &sessionType, &num_commands,
-					   &commands, &nameAlg);
+					   &sessionType, &app_data, &nameAlg);
 
 	if (keyHandle == 0) {
 		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
@@ -295,7 +288,7 @@ static int tpm2_rsa_priv_enc(int flen,
 
 	if (sessionType == TPM_SE_POLICY) {
 		rc = tpm2_init_session(tssContext, authHandle,
-				       num_commands, commands, nameAlg);
+				       app_data, nameAlg);
 		if (rc)
 			goto out;
 	}

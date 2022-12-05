@@ -124,8 +124,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Failed to parse file %s\n", filename);
 		exit(1);
 	}
-	if (app_data->commands && !force) {
-		fprintf(stderr, "NUM COMMANDS=%d\n", app_data->num_commands);
+	if (app_data->pols && !force) {
 		fprintf(stderr, "Warning: key %s has associated policy\n"
 			"Policy keys are hard to use, specify --force if this is really what you want\n",
 			filename);

@@ -25,6 +25,12 @@ enum tpm2_type {
 	TPM2_SEALED = 3,
 };
 
+struct policies {
+	char *name;
+	int num_commands;
+	struct policy_command *commands;
+};
+
 /* structure pointed to by the RSA object's app_data pointer */
 struct app_data {
 	enum tpm2_type type;
@@ -39,9 +45,10 @@ struct app_data {
 	char *auth;
 	const char *dir;
 	int req_policy_session;
-	int num_commands;
 	unsigned int name_alg;
-	struct policy_command *commands;
+	/* pols[0] is key policy pols[1+] is authorized policy */
+	struct policies *pols;
+	int num_pols;
 	ENGINE *e;
 };
 
@@ -55,8 +62,7 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			       TPM_HANDLE salt_key, TPM_SE sessionType,
 			       TPM_ALG_ID name_alg);
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
-			 int num_commands, struct policy_command *commands,
-			 TPM_ALG_ID name_alg);
+			 struct app_data *app_data, TPM_ALG_ID name_alg);
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth);
 TPMI_ECC_CURVE tpm2_curve_name_to_TPMI(const char *name);

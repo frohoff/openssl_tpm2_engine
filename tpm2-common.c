@@ -17,6 +17,8 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 
+#include <arpa/inet.h>		/* htons */
+
 #include <openssl/asn1.h>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
@@ -916,9 +918,9 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	return rc;
 }
 
-TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
-			 int num_commands, struct policy_command *commands,
-			 TPM_ALG_ID name_alg)
+static TPM_RC tpm2_try_policy(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
+			      int num_commands, struct policy_command *commands,
+			      TPM_ALG_ID name_alg, const char *prefix)
 {
 	INT32 size;
 	BYTE *policy;
@@ -1006,11 +1008,61 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 
 			break;
 		}
+		case TPM_CC_PolicyAuthorize: {
+			TPM2B_PUBLIC pub;
+			DIGEST_2B nonce;
+			TPMT_SIGNATURE sig;
+			DIGEST_2B policyHash;
+			TPMT_HA sigHash;
+			DIGEST_2B sigDigest;
+			TPM_HANDLE sigkey;
+			TPMT_TK_VERIFIED ticket;
+			NAME_2B name;
+
+			rc = TPM2B_PUBLIC_Unmarshal(&pub, &policy, &size, FALSE);
+			if (rc)
+				goto unmarshal_failure;
+
+			rc = TPM2B_DIGEST_Unmarshal((TPM2B_DIGEST *)&nonce, &policy, &size);
+			if (rc)
+				goto unmarshal_failure;
+			rc = TPMT_SIGNATURE_Unmarshal(&sig, &policy, &size, FALSE);
+			if (rc)
+				goto unmarshal_failure;
+			rc = tpm2_PolicyGetDigest(tssContext, handle, &policyHash);
+			if (rc) {
+				sprintf(reason, "PolicyGetDigest");
+				break;
+			}
+			sigHash.hashAlg = name_alg;
+			TSS_Hash_Generate(&sigHash,
+					  policyHash.size, policyHash.buffer,
+					  nonce.size, nonce.buffer,
+					  0, NULL);
+			sigDigest.size = TSS_GetDigestSize(name_alg);
+			memcpy(sigDigest.buffer, &sigHash.digest, sigDigest.size);
+			rc = tpm2_LoadExternal(tssContext, NULL, &pub, TPM_RH_OWNER, &sigkey, &name);
+			if (rc) {
+				sprintf(reason, "LoadExternal");
+				break;
+			}
+			rc = tpm2_VerifySignature(tssContext, sigkey, &sigDigest, &sig, &ticket);
+			tpm2_flush_handle(tssContext, sigkey);
+			if (rc) {
+				sprintf(reason, "Signature Failed");
+				break;
+			}
+
+			rc = tpm2_PolicyAuthorize(tssContext, handle, &policyHash, &nonce, &name, &ticket);
+			if (rc)
+				sprintf(reason, "PolicyAuthorize failed");
+
+			break;
+		}
 		default:
-			fprintf(stderr, "Unsupported policy command %d\n",
-				commands[i].code);
-			rc = TPM_RC_FAILURE;
-			goto out_flush;
+			fprintf(stderr, "%sUnsupported policy command %d\n",
+				prefix, commands[i].code);
+			return TPM_RC_FAILURE;
 		}
 
 		if (rc) {
@@ -1024,21 +1076,76 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			else
 				check_rc = rc;
 
-			if (check_rc == reason_rc && reason[0])
-				fprintf(stderr, "Policy Failure: %s\n", reason);
-			else
-				tpm2_error(rc, "policy command");
-			goto out_flush;
+			if (check_rc == reason_rc && reason[0]) {
+				fprintf(stderr, "%sPolicy Failure: %s\n",
+					prefix, reason);
+			} else {
+				if (!reason[0])
+					sprintf(reason, "%spolicy command", prefix);
+				tpm2_error(rc, reason);
+			}
+			return rc;
 		}
 	}
-
-	return TPM_RC_SUCCESS;
+	return rc;
 
  unmarshal_failure:
-	tpm2_error(rc, "unmarshal");
+	sprintf(reason, "%sunmarshal", prefix);
+	tpm2_error(rc, reason);
+	return rc;
+}
 
- out_flush:
-	tpm2_flush_handle(tssContext, handle);
+TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
+			 struct app_data *app_data, TPM_ALG_ID name_alg)
+{
+	int num_commands;
+	struct policy_command *commands;
+	char prefix[128];
+	TPM_RC rc;
+
+	if (app_data->pols == NULL)
+		return TPM_RC_SUCCESS;
+
+	commands = app_data->pols[0].commands;
+	num_commands = app_data->pols[0].num_commands;
+
+	if (app_data->num_pols > 1 &&
+	    commands[0].code == TPM_CC_PolicyAuthorize) {
+		int i;
+
+		commands++;
+		num_commands--;
+		for (i = 1; i < app_data->num_pols; i++) {
+			struct policies *pols = &app_data->pols[i];
+
+			if (pols->name)
+				sprintf(prefix, "Signed Policy %d (%s) ", i,
+					pols->name);
+			else
+				sprintf(prefix, "Signed policy %d ", i);
+
+			rc = tpm2_PolicyRestart(tssContext, handle);
+			if (rc != TPM_RC_SUCCESS)
+				break;
+			rc = tpm2_try_policy(tssContext, handle,
+					     pols->num_commands,
+					     pols->commands,
+					     name_alg, prefix);
+			if (rc == TPM_RC_SUCCESS)
+				break;
+		}
+		if (rc != TPM_RC_SUCCESS)
+			goto out;
+
+		fprintf(stderr, "%ssucceeded\n", prefix);
+	}
+
+	rc = tpm2_try_policy(tssContext, handle, num_commands, commands,
+			     name_alg, "");
+ out:
+	if (rc != TPM_RC_SUCCESS)
+		tpm2_flush_handle(tssContext, handle);
+
 	return rc;
 }
 
@@ -1335,30 +1442,43 @@ static int tpm2_engine_load_key_policy(struct app_data *app_data,
 {
 	struct policy_command *command;
 	TSSOPTPOLICY *policy;
-	int i, commands_len;
+	int i, len;
+	int num_policies = 1, num_commands;
 
-	app_data->num_commands = sk_TSSOPTPOLICY_num(st_policy);
-	if (app_data->num_commands <= 0)
+	num_commands = sk_TSSOPTPOLICY_num(st_policy);
+	if (num_commands <= 0)
 		return 1;
 
 	policy = sk_TSSOPTPOLICY_value(st_policy, 0);
 	if (ASN1_INTEGER_get(policy->CommandCode) == TPM_CC_PolicyAuthorize
 	    && auth_policy == NULL) {
-		fprintf(stderr, "Key requires signed policies but has none and is thus unusable\n");
+		fprintf(stderr, "Key unusable (no signed policies)\n");
 		return 0;
 	}
 
-	commands_len = sizeof(struct policy_command) * app_data->num_commands;
-	app_data->commands = OPENSSL_malloc(commands_len);
-	if (!app_data->commands)
+	if (auth_policy)
+		num_policies += sk_TSSAUTHPOLICY_num(auth_policy);
+
+	app_data->num_pols = num_policies;
+
+	len = sizeof(*app_data->pols) * num_policies;
+	app_data->pols = OPENSSL_malloc(len);
+	if (!app_data->pols)
 		return 0;
 
-	for (i = 0; i < app_data->num_commands; i++) {
+	len = sizeof(struct policy_command) * num_commands;
+	app_data->pols[0].num_commands = num_commands;
+	app_data->pols[0].commands = OPENSSL_malloc(len);
+	app_data->pols[0].name = NULL;
+	if (!app_data->pols[0].commands)
+		return 0;
+
+	for (i = 0; i < num_commands; i++) {
 		policy = sk_TSSOPTPOLICY_value(st_policy, i);
 		if (!policy)
 			return 0;
 
-		command = app_data->commands + i;
+		command = app_data->pols[0].commands + i;
 		command->code = ASN1_INTEGER_get(policy->CommandCode);
 		command->size = policy->CommandPolicy->length;
 		command->policy = NULL;
@@ -1374,6 +1494,52 @@ static int tpm2_engine_load_key_policy(struct app_data *app_data,
 		       command->size);
 	}
 
+	if (num_policies == 1)
+		return 1;
+
+	for (i = 1; i < num_policies; i++) {
+		int j;
+		TSSAUTHPOLICY *ap = sk_TSSAUTHPOLICY_value(auth_policy, i-1);
+		struct policies *pols = &app_data->pols[i];
+		if (!ap)
+			return 0;
+
+		if (ap->name) {
+			pols->name = OPENSSL_malloc(ap->name->length + 1);
+			if (!pols->name)
+				return 0;
+			memcpy(pols->name, ap->name->data, ap->name->length);
+			pols->name[ap->name->length] = '\0';
+		} else {
+			pols->name = NULL;
+		}
+
+		num_commands = sk_TSSOPTPOLICY_num(ap->policy);
+		len = sizeof(struct policy_command) * num_commands;
+		app_data->pols[i].num_commands = num_commands;
+		app_data->pols[i].commands = OPENSSL_malloc(len);
+		if (!app_data->pols[i].commands)
+			return 0;
+
+		for (j = 0; j < num_commands; j++) {
+			policy = sk_TSSOPTPOLICY_value(ap->policy, j);
+
+			command = app_data->pols[i].commands + j;
+			command->code = ASN1_INTEGER_get(policy->CommandCode);
+			command->size = policy->CommandPolicy->length;
+			command->policy = NULL;
+
+			if (!command->size)
+				continue;
+
+			command->policy = OPENSSL_malloc(command->size);
+			if (!command->policy)
+				return 0;
+
+			memcpy(command->policy, policy->CommandPolicy->data,
+			       command->size);
+		}
+	}
 	return 1;
 }
 
@@ -1668,13 +1834,18 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 
 void tpm2_delete(struct app_data *app_data)
 {
-	int i;
+	int i, j;
+	struct policies *pols = app_data->pols;
 
-	if (app_data->commands) {
-		for (i = 0; i < app_data->num_commands; i++)
-			OPENSSL_free(app_data->commands[i].policy);
+	if (pols) {
+		for (i = 0; i < app_data->num_pols; i++) {
+			for (j = 0; j < pols[i].num_commands; j++)
+				OPENSSL_free(pols[i].commands[j].policy);
 
-		OPENSSL_free(app_data->commands);
+			OPENSSL_free(pols[i].commands);
+			OPENSSL_free(pols[i].name);
+		}
+		OPENSSL_free(app_data->pols);
 	}
 	OPENSSL_free(app_data->priv);
 	OPENSSL_free(app_data->pub);
