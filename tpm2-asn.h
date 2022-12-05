@@ -38,6 +38,36 @@ DEFINE_STACK_OF(TSSOPTPOLICY);
 #endif
 
 /*
+ * Define the format of optional authorization policy.  The policy for
+ * the key must begin with a TPM2_PolicyAuthorize statement with a
+ * nonce and pub key but empty signature.  Each element of the
+ * AuthPolicy->Policy array must end with TPM2_PolicyAuthorize with
+ * empty nonce and pubkey but polulated signature which is a hash of
+ * nonce || this policy
+ *
+ * TPMAuthPolicy ::= {
+ *      Name                  [0] EXPLICIT UTF8STRING OPTIONAL
+ *      Policy                [1] EXPLICIT SEQUENCE OF TPMPolicy
+ * }
+ */
+typedef struct {
+	ASN1_STRING *name;
+	STACK_OF(TSSOPTPOLICY) *policy;
+} TSSAUTHPOLICY;
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000
+DECLARE_STACK_OF(TSSAUTHPOLICY);
+#define sk_TSSAUTHPOLICY_new_null() SKM_sk_new_null(TSSAUTHPOLICY)
+#define sk_TSSAUTHPOLICY_push(sk, policy) SKM_sk_push(TSSAUTHPOLICY, sk, policy)
+#define sk_TSSAUTHPOLICY_pop(sk) SKM_sk_pop(TSSAUTHPOLICY, sk)
+#define sk_TSSAUTHPOLICY_free(sk) SKM_sk_free(TSSAUTHPOLICY, sk)
+#define sk_TSSAUTHPOLICY_num(policy) SKM_sk_num(TSSAUTHPOLICY, policy)
+#define sk_TSSAUTHPOLICY_value(policy, i) SKM_sk_value(TSSAUTHPOLICY, policy, i)
+#else
+DEFINE_STACK_OF(TSSAUTHPOLICY);
+#endif
+
+/*
  * Define the format of a TPM key file.  The current format covers
  * both TPM1.2 keys as well as symmetrically encrypted private keys
  * produced by TSS2_Import and the TPM2 format public key which
@@ -61,6 +91,7 @@ DEFINE_STACK_OF(TSSOPTPOLICY);
  *	emptyAuth	[0] EXPLICIT BOOLEAN OPTIONAL
  *	policy		[1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL
  *	secret		[2] EXPLICIT OCTET STRING OPTIONAL
+ *	authPolicy	[3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL
  *	parent		INTEGER
  *	pubkey		OCTET STRING
  *	privkey		OCTET STRING
@@ -81,6 +112,7 @@ typedef struct {
 	ASN1_BOOLEAN emptyAuth;
 	STACK_OF(TSSOPTPOLICY) *policy;
 	ASN1_OCTET_STRING *secret;
+	STACK_OF(TSSAUTHPOLICY) *authPolicy;
 	ASN1_INTEGER *parent;
 	ASN1_OCTET_STRING *pubkey;
 	ASN1_OCTET_STRING *privkey;
@@ -107,6 +139,7 @@ typedef struct {
 #define TSSPRIVKEY_PEM_STRING "TSS2 PRIVATE KEY"
 
 DECLARE_ASN1_FUNCTIONS(TSSOPTPOLICY);
+DECLARE_ASN1_FUNCTIONS(TSSAUTHPOLICY);
 DECLARE_ASN1_FUNCTIONS(TSSLOADABLE);
 DECLARE_ASN1_FUNCTIONS(TSSPRIVKEY);
 DECLARE_PEM_write_bio(TSSLOADABLE, TSSLOADABLE);

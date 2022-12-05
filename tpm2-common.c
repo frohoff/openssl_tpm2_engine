@@ -24,6 +24,7 @@
 #include <openssl/pem.h>
 #include <openssl/err.h>
 #include <openssl/ui.h>
+#include <openssl/rand.h>
 
 #include "tpm2-tss.h"
 #include "tpm2-asn.h"
@@ -1329,7 +1330,8 @@ char *tpm2_get_auth(UI_METHOD *ui, char *input_string, void *cb_data)
 }
 
 static int tpm2_engine_load_key_policy(struct app_data *app_data,
-				       STACK_OF(TSSOPTPOLICY) *st_policy)
+				       STACK_OF(TSSOPTPOLICY) *st_policy,
+				       STACK_OF(TSSAUTHPOLICY) *auth_policy)
 {
 	struct policy_command *command;
 	TSSOPTPOLICY *policy;
@@ -1338,6 +1340,13 @@ static int tpm2_engine_load_key_policy(struct app_data *app_data,
 	app_data->num_commands = sk_TSSOPTPOLICY_num(st_policy);
 	if (app_data->num_commands <= 0)
 		return 1;
+
+	policy = sk_TSSOPTPOLICY_value(st_policy, 0);
+	if (ASN1_INTEGER_get(policy->CommandCode) == TPM_CC_PolicyAuthorize
+	    && auth_policy == NULL) {
+		fprintf(stderr, "Key requires signed policies but has none and is thus unusable\n");
+		return 0;
+	}
 
 	commands_len = sizeof(struct policy_command) * app_data->num_commands;
 	app_data->commands = OPENSSL_malloc(commands_len);
@@ -1415,6 +1424,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	ASN1_OCTET_STRING *privkey;
 	ASN1_OCTET_STRING *secret = NULL;
 	TPM2B_PUBLIC objectPublic;
+	STACK_OF(TSSAUTHPOLICY) *authPolicy;
 
 	bf = BIO_new_file(filename, "r");
 	if (!bf) {
@@ -1437,6 +1447,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		privkey = tpk->privkey;
 		policy = tpk->policy;
 		secret = tpk->secret;
+		authPolicy = tpk->authPolicy;
 	} else {
 		tpm2_type = TPM2_LEGACY;
 		BIO_seek(bf, 0);
@@ -1455,6 +1466,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		pubkey = tssl->pubkey;
 		privkey = tssl->privkey;
 		policy = tssl->policy;
+		authPolicy = NULL;
 	}
 
 	BIO_free(bf);
@@ -1631,7 +1643,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 	      TPMA_OBJECT_USERWITHAUTH))
 		ad->req_policy_session = 1;
 
-	if (!tpm2_engine_load_key_policy(ad, policy))
+	if (!tpm2_engine_load_key_policy(ad, policy, authPolicy))
 		goto err_free_key;
 
  out:
@@ -1658,10 +1670,12 @@ void tpm2_delete(struct app_data *app_data)
 {
 	int i;
 
-	for (i = 0; i < app_data->num_commands; i++)
-		OPENSSL_free(app_data->commands[i].policy);
+	if (app_data->commands) {
+		for (i = 0; i < app_data->num_commands; i++)
+			OPENSSL_free(app_data->commands[i].policy);
 
-	OPENSSL_free(app_data->commands);
+		OPENSSL_free(app_data->commands);
+	}
 	OPENSSL_free(app_data->priv);
 	OPENSSL_free(app_data->pub);
 
@@ -2187,6 +2201,72 @@ void tpm2_add_auth_policy(STACK_OF(TSSOPTPOLICY) *sk, TPMT_HA *digest)
 			  written, buf, 0, NULL);
 }
 
+TPM_RC tpm2_add_signed_policy(STACK_OF(TSSOPTPOLICY) *sk, char *key_file,
+			      TPMT_HA *digest)
+{
+	TSSOPTPOLICY *policy = TSSOPTPOLICY_new();
+	BYTE buf[1024];
+	BYTE *buffer = buf;
+	UINT16 written = 0;
+	INT32 size = sizeof(buf);
+	const TPM_CC cc = TPM_CC_PolicyAuthorize;
+	EVP_PKEY *pkey = openssl_read_public_key(key_file);
+	TPM_RC rc = NOT_TPM_ERROR;
+	TPM2B_PUBLIC pub;
+	DIGEST_2B nonce;
+	TPMT_SIGNATURE sig;
+	NAME_2B name;
+
+	if (!pkey)
+		/* openssl_read_public_key will print error */
+		return rc;
+
+	rc = openssl_to_tpm_public(&pub, pkey);
+	if (rc)
+		return rc;
+	/*
+	 * Our RSA keys have a decrypt only template, so add signing to
+	 * prevent TPM2_VerifySignature returning TPM_RC_ATTRIBUTES
+	 */
+	VAL(pub.publicArea.objectAttributes) |= TPMA_OBJECT_SIGN;
+
+	tpm2_ObjectPublic_GetName(&name, &pub.publicArea);
+
+	nonce.size = TSS_GetDigestSize(name_alg);
+	rc = RAND_bytes(nonce.buffer, nonce.size);
+	if (!rc)
+		return NOT_TPM_ERROR;
+
+	sig.sigAlg = TPM_ALG_NULL; /* should produce an empty signature */
+
+	TSS_TPM_CC_Marshal(&cc, &written, &buffer, &size);
+	TSS_TPM2B_PUBLIC_Marshal(&pub, &written, &buffer, &size);
+	TSS_TPM2B_DIGEST_Marshal((TPM2B_DIGEST *)&nonce, &written, &buffer, &size);
+	TSS_TPMT_SIGNATURE_Marshal(&sig, &written, &buffer, &size);
+
+	ASN1_INTEGER_set(policy->CommandCode, cc);
+	ASN1_STRING_set(policy->CommandPolicy, buf + 4, written - 4);
+	sk_TSSOPTPOLICY_push(sk, policy);
+
+	/* now we need two hashes for the policy update */
+
+
+	TSS_Hash_Generate(digest,
+			  TSS_GetDigestSize(digest->hashAlg),
+			  (uint8_t *)&digest->digest,
+			  4, buf, /* CC */
+			  name.size, name.name, /* name */
+			  0, NULL);
+
+	TSS_Hash_Generate(digest,
+			  TSS_GetDigestSize(digest->hashAlg),
+			  (uint8_t *)&digest->digest, /* intermediate digest */
+			  nonce.size, nonce.buffer,
+			  0, NULL);
+
+	return TPM_RC_SUCCESS;
+}
+
 EVP_PKEY *
 openssl_read_public_key(char *filename)
 {
@@ -2365,6 +2445,7 @@ openssl_print_errors()
 }
 
 IMPLEMENT_ASN1_FUNCTIONS(TSSOPTPOLICY)
+IMPLEMENT_ASN1_FUNCTIONS(TSSAUTHPOLICY)
 IMPLEMENT_ASN1_FUNCTIONS(TSSLOADABLE)
 IMPLEMENT_ASN1_FUNCTIONS(TSSPRIVKEY)
 IMPLEMENT_PEM_write_bio(TSSLOADABLE, TSSLOADABLE, TSSLOADABLE_PEM_STRING, TSSLOADABLE)
@@ -2376,6 +2457,11 @@ ASN1_SEQUENCE(TSSOPTPOLICY) = {
 	ASN1_EXP(TSSOPTPOLICY, CommandCode, ASN1_INTEGER, 0),
 	ASN1_EXP(TSSOPTPOLICY, CommandPolicy, ASN1_OCTET_STRING, 1)
 } ASN1_SEQUENCE_END(TSSOPTPOLICY)
+
+ASN1_SEQUENCE(TSSAUTHPOLICY) = {
+	ASN1_EXP_OPT(TSSAUTHPOLICY, name, ASN1_UTF8STRING, 0),
+	ASN1_EXP_SEQUENCE_OF(TSSAUTHPOLICY, policy, TSSOPTPOLICY, 1)
+} ASN1_SEQUENCE_END(TSSAUTHPOLICY)
 
 ASN1_SEQUENCE(TSSLOADABLE) = {
 	ASN1_SIMPLE(TSSLOADABLE, type, ASN1_OBJECT),
@@ -2391,6 +2477,7 @@ ASN1_SEQUENCE(TSSPRIVKEY) = {
 	ASN1_EXP_OPT(TSSPRIVKEY, emptyAuth, ASN1_BOOLEAN, 0),
 	ASN1_EXP_SEQUENCE_OF_OPT(TSSPRIVKEY, policy, TSSOPTPOLICY, 1),
 	ASN1_EXP_OPT(TSSPRIVKEY, secret, ASN1_OCTET_STRING, 2),
+	ASN1_EXP_SEQUENCE_OF_OPT(TSSPRIVKEY, authPolicy, TSSAUTHPOLICY, 3),
 	ASN1_SIMPLE(TSSPRIVKEY, parent, ASN1_INTEGER),
 	ASN1_SIMPLE(TSSPRIVKEY, pubkey, ASN1_OCTET_STRING),
 	ASN1_SIMPLE(TSSPRIVKEY, privkey, ASN1_OCTET_STRING)

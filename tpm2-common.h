@@ -105,4 +105,6 @@ TPM_RC openssl_to_tpm_public_rsa(TPMT_PUBLIC *pub, EVP_PKEY *pkey);
 TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey);
 void openssl_print_errors();
 TPM_RC tpm2_ObjectPublic_GetName(NAME_2B *name,	 TPMT_PUBLIC *tpmtPublic);
+TPM_RC tpm2_add_signed_policy(STACK_OF(TSSOPTPOLICY) *sk, char *key_file,
+			      TPMT_HA *digest);
 #endif
