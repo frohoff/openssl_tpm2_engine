@@ -20,12 +20,15 @@
 #include "tpm2-asn.h"
 #include "tpm2-common.h"
 
+#define OPT_SIGNED_POLICY 0x1fd
+
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
 	{"auth-parent", 1, 0, 'b'},
 	{"help", 0, 0, 'h'},
 	{"parent-handle", 1, 0, 'p'},
 	{"pcr-lock", 1, 0, 'x'},
+	{"signed-policy", 1, 0, OPT_SIGNED_POLICY },
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
 	{"da", 0, 0, 'd'},
@@ -67,12 +70,15 @@ usage(char *argv0)
 		"\t                              respectively\n"
 		"\t-v, --version                 print package version\n"
 		"\t-k, --password <pwd>          use this password instead of prompting\n"
-		"\t-m,--nomigrate                Create a sealed data bundle that can be\n"
+		"\t-m, --nomigrate                Create a sealed data bundle that can be\n"
 		"                                migrated to other systems.\n"
 		"\t-n, --name-scheme <scheme>    name algorithm to use sha1 [sha256] sha384 sha512\n"
 		"\t-x, --pcr-lock <pcrs>         Lock the created key to the specified PCRs\n"
 		"                                By current value.  See PCR VALUES for\n"
 		"                                details about formatting\n"
+		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
+		"\t                              policies signed by the specified public <key>\n"
+		"\t                              to authorize use of the key\n"
 		"\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
@@ -111,6 +117,7 @@ int main(int argc, char **argv)
 	char *parent_str = NULL;
 	TPML_PCR_SELECTION pcr_lock;
 	int has_policy = 0;
+	char *signed_policy = NULL;
 
 	pcr_lock.count = 0;
 
@@ -175,6 +182,9 @@ int main(int argc, char **argv)
 		case 'x':
 			tpm2_get_pcr_lock(&pcr_lock, optarg);
 			break;
+		case OPT_SIGNED_POLICY:
+			signed_policy = optarg;
+			break;
 		default:
 			printf("Unknown option '%c'\n", c);
 			usage(argv[0]);
@@ -198,7 +208,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (pcr_lock.count != 0 || policyFilename)
+	if (pcr_lock.count != 0 || policyFilename || signed_policy)
 		has_policy = 1;
 
 	digest.hashAlg = name_alg;
@@ -219,6 +229,11 @@ int main(int argc, char **argv)
 				reason = "parse_policy_file";
 				goto out_free_policy;
 			}
+		} else if (signed_policy) {
+			rc = tpm2_add_signed_policy(sk, signed_policy, &digest);
+			reason = "add_signed_policy";
+			if (rc)
+				goto out_free_policy;
 		}
 	}
 

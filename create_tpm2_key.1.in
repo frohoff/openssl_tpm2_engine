@@ -45,6 +45,16 @@ well as comma separated ranges.  So
 
  sha512:1,3-5 means PCRs 1,3,4 and 5 in the sha512 bank
 
+[Signed Policies]
+
+When the option --signed-policy <key> is used, it creates a key whose
+policy can be extended by anyone possessing the private part of <key>.
+The <key> presented must be a public key (so the owner of the private
+key doesn't have to be the owner of the created tpm key).
+
+Note that keys created with --signed-policy cannot be used until at
+least one signed policy is added.
+
 [examples]
 
 Create a self-signed cert using the TPM engine:

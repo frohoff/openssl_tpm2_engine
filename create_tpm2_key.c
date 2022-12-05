@@ -28,6 +28,7 @@
 
 #define OPT_DEPRECATED 0x1ff
 #define OPT_RESTRICTED 0x1fe
+#define OPT_SIGNED_POLICY 0x1fd
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
@@ -37,6 +38,7 @@ static struct option long_options[] = {
 	{"name-scheme", 1, 0, 'n'},
 	{"parent-handle", 1, 0, 'p'},
 	{"pcr-lock", 1, 0, 'x'},
+	{"signed-policy", 1, 0, OPT_SIGNED_POLICY },
 	{"wrap", 1, 0, 'w'},
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
@@ -46,7 +48,7 @@ static struct option long_options[] = {
 	{"da", 0, 0, 'd'},
 	{"key-policy", 1, 0, 'c'},
 	{"import", 1, 0, 'i'},
-	{"restricted", 0, 0, OPT_RESTRICTED},
+	{"restricted", 0, 0, OPT_RESTRICTED },
 	/*
 	 * The option --deprecated allows us to create old format keys
 	 * for the purposes of testing.  It should never be used in
@@ -96,6 +98,9 @@ usage(char *argv0)
 		"\t-x, --pcr-lock <pcrs>         Lock the created key to the specified PCRs\n"
 		"                                By current value.  See PCR VALUES for\n"
 		"                                details about formatting\n"
+		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
+		"\t                              policies signed by the specified public <key>\n"
+		"\t                              to authorize use of the key\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -594,6 +599,7 @@ int main(int argc, char **argv)
 	TPM2B_PUBLIC *pub;
 	PRIVATE_2B *priv;
 	char *key = NULL, *parent_auth = NULL, *import = NULL;
+	char *signed_policy = NULL;
 	TPMI_ECC_CURVE ecc = TPM_ECC_NONE;
 	int rsa = -1;
 	uint32_t noda = TPMA_OBJECT_NODA;
@@ -699,6 +705,9 @@ int main(int argc, char **argv)
 			case OPT_RESTRICTED:
 				restricted = 1;
 				break;
+			case OPT_SIGNED_POLICY:
+				signed_policy = optarg;
+				break;
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
@@ -738,6 +747,11 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	if (signed_policy && policyFilename) {
+		fprintf(stderr, "cannot specify both signed policy and policy file\n");
+		exit(1);
+	}
+
 	if (pcr_lock.count !=0 && policyFilename) {
 		fprintf(stderr, "cannot specify both policy file and pcr lock\n");
 		exit(1);
@@ -748,7 +762,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (pcr_lock.count != 0 || policyFilename)
+	if (pcr_lock.count != 0 || policyFilename || signed_policy)
 		has_policy = 1;
 
 	digest.hashAlg = name_alg;
@@ -766,6 +780,11 @@ int main(int argc, char **argv)
 		if (policyFilename) {
 			rc = tpm2_parse_policy_file(policyFilename, sk, auth, &digest);
 			reason = "parse_policy_file";
+			if (rc)
+				goto out_free_policy;
+		} else if (signed_policy) {
+			rc = tpm2_add_signed_policy(sk, signed_policy, &digest);
+			reason = "add_signed_policy";
 			if (rc)
 				goto out_free_policy;
 		}
