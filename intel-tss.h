@@ -46,6 +46,7 @@
 #define TPM_RC_VALUE		TPM2_RC_VALUE
 #define TPM_RC_POLICY		TPM2_RC_POLICY
 #define TPM_RC_FAILURE		TPM2_RC_FAILURE
+#define TPM_RC_MEMORY		TPM2_RC_MEMORY
 
 #define RC_VER1			TPM2_RC_VER1
 #define RC_FMT1			TPM2_RC_FMT1
@@ -66,6 +67,7 @@
 #define TPM_CC_PolicyPCR	TPM2_CC_PolicyPCR
 #define TPM_CC_PolicyAuthValue	TPM2_CC_PolicyAuthValue
 #define TPM_CC_PolicyCounterTimer	TPM2_CC_PolicyCounterTimer
+#define TPM_CC_PolicyAuthorize	TPM2_CC_PolicyAuthorize
 
 #define TPM_ST_HASHCHECK	TPM2_ST_HASHCHECK
 
@@ -113,6 +115,7 @@
 #define TPM_ALG_RSAES		TPM2_ALG_RSAES
 #define TPM_ALG_OAEP		TPM2_ALG_OAEP
 #define TPM_ALG_ECDSA		TPM2_ALG_ECDSA
+#define TPM_ALG_RSASSA		TPM2_ALG_RSASSA
 
 /* the odd TPMA_OBJECT_  type is wrong too */
 
@@ -180,6 +183,7 @@ TSS_CONVERT_MARSHAL(TPM2B_DIGEST, )
 TSS_CONVERT_MARSHAL(TPM2B_PUBLIC, )
 TSS_CONVERT_MARSHAL(TPM2B_PRIVATE, )
 TSS_CONVERT_MARSHAL(TPML_PCR_SELECTION, )
+TSS_CONVERT_MARSHAL(TPMT_SIGNATURE, )
 TSS_CONVERT_MARSHAL(UINT32, *)
 #define TSS_TPM_CC_Marshal TSS_UINT32_Marshal
 
@@ -189,10 +193,13 @@ TSS_CONVERT_UNMARSHAL(TPM2B_PUBLIC, X)
 TSS_CONVERT_UNMARSHAL(TPM2B_ENCRYPTED_SECRET, )
 TSS_CONVERT_UNMARSHAL(UINT16, )
 TSS_CONVERT_UNMARSHAL(UINT32, )
+TSS_CONVERT_UNMARSHAL(TPM2B_DIGEST, )
+TSS_CONVERT_UNMARSHAL(TPMT_SIGNATURE, X)
 
 #define ARRAY_SIZE(A) (sizeof(A)/sizeof(A[0]))
 
 #define TPM2B_PUBLIC_Unmarshal(A, B, C, D) TPM2B_PUBLIC_UnmarshalX(A, B, C)
+#define TPMT_SIGNATURE_Unmarshal(A, B, C, D) TPMT_SIGNATURE_UnmarshalX(A, B, C)
 #define TPM_EO_Unmarshal	UINT16_Unmarshal
 #define TPM_CC_Unmarshal	UINT32_Unmarshal
 
@@ -913,6 +920,33 @@ tpm2_Load(TSS_CONTEXT *tssContext, TPM_HANDLE parentHandle,
 }
 
 static inline TPM_RC
+tpm2_LoadExternal(TSS_CONTEXT *tssContext, TPM2B_SENSITIVE *inPrivate,
+		  TPM2B_PUBLIC *inPublic, TPM_HANDLE hierarchy,
+		  TPM_HANDLE *objectHandle, NAME_2B *name)
+{
+	TPM_RC rc;
+
+	rc = Esys_LoadExternal(tssContext,
+			       ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+			       inPrivate, inPublic, hierarchy,
+			       objectHandle);
+	if (rc)
+		return rc;
+
+	/* stupid Intel can't follow the TSS standard.  The name above is
+	 * actually returned by the call, just thrown away */
+
+	if (name) {
+		NAME_2B *n;
+		Esys_TR_GetName(tssContext, *objectHandle, &n);
+		*name = *n;
+		free(n);
+	}
+
+	return rc;
+}
+
+static inline TPM_RC
 tpm2_PolicyPCR(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 	       DIGEST_2B *pcrDigest, TPML_PCR_SELECTION *pcrs)
 {
@@ -936,6 +970,65 @@ tpm2_PolicyCounterTimer(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 	return Esys_PolicyCounterTimer(tssContext, policySession,
 				       ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
 				       operandB, offset, operation);
+}
+
+static inline TPM_RC
+tpm2_PolicyAuthorize(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+		     DIGEST_2B *approvedPolicy, DIGEST_2B *policyRef,
+		     NAME_2B *keySign, TPMT_TK_VERIFIED *checkTicket)
+{
+	return Esys_PolicyAuthorize(tssContext, policySession,
+				    ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+				    approvedPolicy, policyRef, keySign,
+				    checkTicket);
+}
+
+static inline TPM_RC
+tpm2_PolicyGetDigest(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+		     DIGEST_2B *digest)
+{
+	TPM_RC rc;
+	DIGEST_2B *outd;
+
+	rc = Esys_PolicyGetDigest(tssContext, policySession,
+				  ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+				  &outd);
+	if (rc)
+		return rc;
+
+	*digest = *outd;
+	free(outd);
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_PolicyRestart(TSS_CONTEXT *tssContext, TPM_HANDLE sessionHandle)
+{
+	return Esys_PolicyRestart(tssContext, sessionHandle,
+				  ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE);
+}
+
+static inline TPM_RC
+tpm2_VerifySignature(TSS_CONTEXT *tssContext, TPM_HANDLE keyHandle,
+		     DIGEST_2B *digest, TPMT_SIGNATURE *signature,
+		     TPMT_TK_VERIFIED *validation)
+{
+	TPM_RC rc;
+	TPMT_TK_VERIFIED *outv;
+
+	rc = Esys_VerifySignature(tssContext, keyHandle,
+				  ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+				  digest, signature, &outv);
+	if (rc)
+		return rc;
+
+	if (validation)
+		*validation = *outv;
+
+	free(outv);
+
+	return rc;
 }
 
 static inline TPM_RC

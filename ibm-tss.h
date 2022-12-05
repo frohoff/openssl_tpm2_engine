@@ -398,6 +398,62 @@ tpm2_StartAuthSession(TSS_CONTEXT *tssContext, TPM_HANDLE tpmKey,
 }
 
 static inline TPM_RC
+tpm2_LoadExternal(TSS_CONTEXT *tssContext, TPM2B_SENSITIVE *inPrivate,
+		  TPM2B_PUBLIC *inPublic, TPM_HANDLE hierarchy,
+		  TPM_HANDLE *objectHandle, NAME_2B *name)
+{
+	LoadExternal_In in;
+	LoadExternal_Out out;
+	TPM_RC rc;
+
+	if (inPrivate)
+		in.inPrivate = *inPrivate;
+	else
+		in.inPrivate.t.size = 0;
+	in.inPublic = *inPublic;
+	in.hierarchy = hierarchy;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_LoadExternal,
+			 TPM_RH_NULL, NULL, 0);
+
+	*objectHandle = out.objectHandle;
+	if (name)
+		*name = out.name.t;
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_VerifySignature(TSS_CONTEXT *tssContext, TPM_HANDLE keyHandle,
+		     DIGEST_2B *digest, TPMT_SIGNATURE *signature,
+		     TPMT_TK_VERIFIED *validation)
+{
+	VerifySignature_In in;
+	VerifySignature_Out out;
+	TPM_RC rc;
+
+	in.keyHandle = keyHandle;
+	in.digest.t = *digest;
+	in.signature = *signature;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_VerifySignature,
+			 TPM_RH_NULL, NULL, 0);
+
+	if (validation)
+		*validation = out.validation;
+
+	return rc;
+}
+
+static inline TPM_RC
 tpm2_Load(TSS_CONTEXT *tssContext, TPM_HANDLE parentHandle,
 	  PRIVATE_2B *inPrivate, TPM2B_PUBLIC *inPublic,
 	  TPM_HANDLE *objectHandle,
@@ -447,6 +503,30 @@ tpm2_PolicyPCR(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 }
 
 static inline TPM_RC
+tpm2_PolicyAuthorize(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+		     DIGEST_2B *approvedPolicy, DIGEST_2B *policyRef,
+		     NAME_2B *keySign, TPMT_TK_VERIFIED *checkTicket)
+{
+	PolicyAuthorize_In in;
+	TPM_RC rc;
+
+	in.policySession = policySession;
+	in.approvedPolicy.t = *approvedPolicy;
+	in.policyRef.t = *policyRef;
+	in.keySign.t = *keySign;
+	in.checkTicket = *checkTicket;
+
+	rc = TSS_Execute(tssContext,
+			 NULL,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_PolicyAuthorize,
+			 TPM_RH_NULL, NULL, 0);
+
+	return rc;
+}
+
+static inline TPM_RC
 tpm2_PolicyAuthValue(TSS_CONTEXT *tssContext, TPM_HANDLE policySession)
 {
 	PolicyAuthValue_In in;
@@ -483,6 +563,46 @@ tpm2_PolicyCounterTimer(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 			 NULL,
 			 TPM_CC_PolicyCounterTimer,
 			 TPM_RH_NULL, NULL, 0);
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_PolicyRestart(TSS_CONTEXT *tssContext, TPM_HANDLE sessionHandle)
+{
+	PolicyRestart_In in;
+	TPM_RC rc;
+
+	in.sessionHandle = sessionHandle;
+
+	rc = TSS_Execute(tssContext,
+			 NULL,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_PolicyRestart,
+			 TPM_RH_NULL, NULL, 0);
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_PolicyGetDigest(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+		     DIGEST_2B *digest)
+{
+	PolicyGetDigest_In in;
+	PolicyGetDigest_Out out;
+	TPM_RC rc;
+
+	in.policySession = policySession;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_PolicyGetDigest,
+			 TPM_RH_NULL, NULL, 0);
+
+	*digest = out.policyDigest.t;
 
 	return rc;
 }
