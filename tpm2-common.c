@@ -1773,7 +1773,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 		}
 	}
 
-	if (strcmp(OID_importableKey, oid) == 0) {
+	if (secret) {
 		TPM_HANDLE session;
 		TPM_HANDLE parentHandle;
 		DATA_2B encryptionKey;
@@ -2059,12 +2059,16 @@ int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 			k.tpk.type = OBJ_txt2obj(OID_sealedData, 1);
 		} else if (secret) {
 			k.tpk.type = OBJ_txt2obj(OID_importableKey, 1);
-			k.tpk.secret = ASN1_OCTET_STRING_new();
-			ASN1_STRING_set(k.tpk.secret, secret->secret,
-					secret->size);
 		} else {
 			k.tpk.type = OBJ_txt2obj(OID_loadableKey, 1);
 		}
+
+		if (secret) {
+			k.tpk.secret = ASN1_OCTET_STRING_new();
+			ASN1_STRING_set(k.tpk.secret, secret->secret,
+					secret->size);
+		}
+
 		k.tpk.emptyAuth = empty_auth;
 		k.tpk.parent = ASN1_INTEGER_new();
 		ASN1_INTEGER_set(k.tpk.parent, parent);
