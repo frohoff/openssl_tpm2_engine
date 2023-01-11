@@ -33,5 +33,28 @@ ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm | grep -q "${DATA}" || exit 1;
 tsspcrextend -ha 16 -ic $RANDOM
 ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm && exit 1
 
+##
+# Check importable
+# test is
+# 1. create srk.pub as parent for import
+# 2. seal with password
+# 3. check unseal
+# 4. seal with policy
+# 5. check unseal
+# 6. update PCR and check unseal failure
+
+DATA="Some Different DATA"
+POLICYFILE="policies/policy_pcr.txt"
+prim=$(tsscreateprimary -hi o -st -ecc nistp256 -opem srk.pub | sed 's/Handle //') || exit 1
+tssflushcontext -ha $prim
+TPM_INTERFACE_TYPE= echo $DATA | ${bindir}/seal_tpm2_data -a -k ${AUTH} --import srk.pub seal.tpm || exit 1;
+${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm | grep -q "${DATA}" || exit 1;
+rm seal.tpm
+
+TPM_INTERFACE_TYPE= echo $DATA | ${bindir}/seal_tpm2_data --import srk.pub --policy ${POLICYFILE} seal.tpm || exit 1;
+tsspcrreset -ha 16
+${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm && exit 1
+tsspcrextend -ha 16 -ic aaa
+${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm | grep -q "${DATA}" || exit 1;
 
 exit 0
