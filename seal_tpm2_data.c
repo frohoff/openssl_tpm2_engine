@@ -14,6 +14,7 @@
 
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/rand.h>
 #include <openssl/ui.h>
 
 #include "tpm2-tss.h"
@@ -35,6 +36,7 @@ static struct option long_options[] = {
 	{"policy", 1, 0, 'c'},
 	{"nomigrate", 0, 0, 'm'},
 	{"name-scheme", 1, 0, 'n'},
+	{"import", 1, 0, 'i'},
 	{0, 0, 0, 0}
 };
 
@@ -79,11 +81,31 @@ usage(char *argv0)
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
 		"\t                              to authorize use of the key\n"
+		"\t-i, --import <pubkey>         Create an importable key with the outer\n"
+		"                                wrapper encrypted to <pubkey>\n"
 		"\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
 	exit(-1);
+}
+
+void wrap_data(TPMT_SENSITIVE *s, const char *password, void *data,
+	       int data_len)
+{
+	memset(s, 0, sizeof(*s));
+
+	s->sensitiveType = TPM_ALG_KEYEDHASH;
+	if (password) {
+		int len = strlen(password);
+
+		memcpy(VAL_2B(s->authValue, buffer), password, len);
+		VAL_2B(s->authValue, size) = len;
+	} else {
+		VAL_2B(s->authValue, size) = 0;
+	}
+	VAL_2B(s->sensitive.bits, size) = data_len;
+	memcpy(VAL_2B(s->sensitive.bits, buffer), data, data_len);
 }
 
 int main(int argc, char **argv)
@@ -95,8 +117,8 @@ int main(int argc, char **argv)
 	char *filename;
 	uint32_t noda = TPMA_OBJECT_NODA, phandle;
 	TPM_RC rc;
-	TSS_CONTEXT *tssContext;
-	const char *dir;
+	TSS_CONTEXT *tssContext = NULL;
+	const char *dir = NULL;
 	const char *reason = ""; /* gcc 4.8.5 gives spurious uninitialized warning without this */
 	TPMT_HA digest;
 	uint32_t sizeInBytes;
@@ -115,15 +137,17 @@ int main(int argc, char **argv)
 	int32_t size;
 	uint16_t pubkey_len, privkey_len;
 	char *parent_str = NULL;
+	char *import = NULL;
 	TPML_PCR_SELECTION pcr_lock;
 	int has_policy = 0;
 	char *signed_policy = NULL;
+	ENCRYPTED_SECRET_2B secret, *enc_secret = NULL;
 
 	pcr_lock.count = 0;
 
 	while (1) {
 		option_index = 0;
-		c = getopt_long(argc, argv, "ak:b:hp:vdsun",
+		c = getopt_long(argc, argv, "ak:b:hp:vdsuni:",
 				long_options, &option_index);
 		if (c == -1)
 			break;
@@ -182,6 +206,9 @@ int main(int argc, char **argv)
 		case 'x':
 			tpm2_get_pcr_lock(&pcr_lock, optarg);
 			break;
+		case 'i':
+			import = optarg;
+			break;
 		case OPT_SIGNED_POLICY:
 			signed_policy = optarg;
 			break;
@@ -205,6 +232,11 @@ int main(int argc, char **argv)
 
 	if (pcr_lock.count !=0 && policyFilename) {
 		fprintf(stderr, "cannot specify both policy file and pcr lock\n");
+		exit(1);
+	}
+
+	if (pcr_lock.count != 0 && import) {
+		fprintf(stderr, "cannot specify pcr lock and import because pcrs may not be correct\n");
 		exit(1);
 	}
 
@@ -254,39 +286,39 @@ int main(int argc, char **argv)
 			tpm2_add_auth_policy(sk, &digest);
 	}
 
-	dir = tpm2_set_unique_tssdir();
-	rc = tpm2_create(&tssContext, dir);
-	if (rc) {
-		reason = "TSS_Create";
-		goto out_rmdir;
-	}
-
-	if (pcr_lock.count != 0) {
-		rc = tpm2_pcr_lock_policy(tssContext, &pcr_lock,
-					  sk, &digest);
+	if (!import) {
+		dir = tpm2_set_unique_tssdir();
+		rc = tpm2_create(&tssContext, dir);
 		if (rc) {
-			reason = "create pcr policy";
-			goto out_free_auth;
+			reason = "TSS_Create";
+			goto out_rmdir;
 		}
-	}
-
-	if (parent_str) {
-		parent = tpm2_get_parent(tssContext, parent_str);
-		if (parent == 0) {
-			reason = "Invalid parent";
-			goto out_delete;
+		if (pcr_lock.count != 0) {
+			rc = tpm2_pcr_lock_policy(tssContext, &pcr_lock,
+						  sk, &digest);
+			if (rc) {
+				reason = "create pcr policy";
+				goto out_free_auth;
+			}
 		}
-	}
+		if (parent_str) {
+			parent = tpm2_get_parent(tssContext, parent_str);
+			if (parent == 0) {
+				reason = "Invalid parent";
+				goto out_delete;
+			}
+		}
 
-	if (tpm2_handle_mso(tssContext, parent, TPM_HT_PERMANENT)) {
-		rc = tpm2_load_srk(tssContext, &phandle, parent_auth,
-				   NULL, parent, 1);
-		if (rc) {
+		if (tpm2_handle_mso(tssContext, parent, TPM_HT_PERMANENT)) {
+			rc = tpm2_load_srk(tssContext, &phandle, parent_auth,
+					   NULL, parent, 1);
+			if (rc) {
 				reason = "tpm2_load_srk";
 				goto out_delete;
+			}
+		} else {
+			phandle = parent;
 		}
-	} else {
-		phandle = parent;
 	}
 
 	tpm2_public_template_seal(p);
@@ -321,6 +353,37 @@ int main(int argc, char **argv)
 			TPMA_OBJECT_FIXEDPARENT |
 			TPMA_OBJECT_FIXEDTPM;
 
+	if (import) {
+		TPMT_SENSITIVE ts;
+		EVP_PKEY *p_pkey = openssl_read_public_key(import);
+
+		wrap_data(&ts, data_auth, VAL_2B(s->data, buffer),
+			  VAL_2B(s->data, size));
+
+		/* random nonce for seed to add entropy to wrapping */
+		VAL_2B(ts.seedValue, size) = TSS_GetDigestSize(name_alg);
+		RAND_bytes(VAL_2B(ts.seedValue, buffer),
+			   VAL_2B(ts.seedValue, size));
+
+		/* fill in the unique area as Hash(seed||key) */
+		digest.hashAlg = name_alg;
+		TSS_Hash_Generate(&digest,
+				  VAL_2B(ts.seedValue, size),
+				  VAL_2B(ts.seedValue, buffer),
+				  VAL_2B(ts.sensitive.bits, size),
+				  VAL_2B(ts.sensitive.bits, buffer),
+				  0, NULL);
+		VAL_2B(p->unique.keyedHash, size) = TSS_GetDigestSize(name_alg);
+		memcpy(VAL_2B(p->unique.keyedHash, buffer),
+		       &digest.digest, VAL_2B(p->unique.keyedHash, size));
+
+		outPublic = inPublic;
+		rc = tpm2_outerwrap(p_pkey, &ts, &outPublic.publicArea, &outPrivate, &secret);
+		if (rc)
+			goto out_flush;
+		enc_secret = &secret;
+		goto write_file;
+	}
 	/* use salted parameter encryption to hide the key */
 	rc = tpm2_get_session_handle(tssContext, &authHandle, phandle,
 					     TPM_SE_HMAC, name_alg);
@@ -339,6 +402,9 @@ int main(int argc, char **argv)
 		goto out_flush;
 	}
 
+	parent = tpm2_handle_ext(tssContext, parent);
+
+ write_file:
 	buffer = pubkey;
 	pubkey_len = 0;
 	size = sizeof(pubkey);
@@ -349,18 +415,19 @@ int main(int argc, char **argv)
 	size = sizeof(privkey);
 	TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)&outPrivate, &privkey_len,
 				  &buffer, &size);
-	parent = tpm2_handle_ext(tssContext, parent);
 	tpm2_write_tpmfile(filename, pubkey, pubkey_len,
 			   privkey, privkey_len, data_auth == NULL,
-			   parent, sk, 2, NULL);
-
+			   parent, sk, 2, enc_secret);
 
  out_flush:
-	tpm2_flush_srk(tssContext, phandle);
+	if (tssContext)
+		tpm2_flush_srk(tssContext, phandle);
  out_delete:
-	TSS_Delete(tssContext);
+	if (tssContext)
+		TSS_Delete(tssContext);
  out_rmdir:
-	rmdir(dir);
+	if (dir)
+		rmdir(dir);
  out_free_auth:
 	free(data_auth);
  out_free_policy:
