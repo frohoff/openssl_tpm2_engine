@@ -115,4 +115,9 @@ TPM_RC tpm2_add_signed_policy(STACK_OF(TSSOPTPOLICY) *sk, char *key_file,
 			      TPMT_HA *digest);
 TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
 			      TSSAUTHPOLICY *ap, TPMT_HA *digest);
+TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
+		      TPMT_SENSITIVE *s,
+		      TPMT_PUBLIC *pub,
+		      PRIVATE_2B *p,
+		      ENCRYPTED_SECRET_2B *enc_secret);
 #endif
