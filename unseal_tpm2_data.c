@@ -142,6 +142,8 @@ int main(int argc, char **argv)
 		goto out_free_app_data;
 	}
 
+	name_alg = app_data->name_alg;
+
 	itemHandle = rc;
 
 	rc = tpm2_get_session_handle(tssContext, &session, parent,

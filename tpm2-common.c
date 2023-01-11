@@ -2807,8 +2807,7 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 {
 	PRIVATE_2B secret, seed;
 	/*  amount of room in the buffer for the integrity TPM2B */
-	const int name_alg_size = TSS_GetDigestSize(pub->nameAlg);
-	const int integrity_skip = name_alg_size + 2;
+	const int integrity_skip = SHA256_DIGEST_LENGTH + 2;
 	//	BYTE *integrity = p->buffer;
 	BYTE *sensitive = p->buffer + integrity_skip;
 	BYTE *buf;
@@ -2895,19 +2894,19 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	/* now pass the secret through KDFe to get the shared secret
 	 * The size is the size of the parent name algorithm which we
 	 * assume to be sha256 */
-	TSS_KDFE(seed.buffer, pub->nameAlg, (TPM2B *)&secret, "DUPLICATE",
+	TSS_KDFE(seed.buffer, TPM_ALG_SHA256, (TPM2B *)&secret, "DUPLICATE",
 		 (TPM2B *)&ephemeral_pt.point.x, (TPM2B *)&pub_pt.point.x,
 		 SHA256_DIGEST_LENGTH*8);
 	seed.size = SHA256_DIGEST_LENGTH;
 
 	/* and finally through KDFa to get the aes symmetric encryption key */
 	tpm2_ObjectPublic_GetName(&name, pub);
-	TSS_KDFA(aeskey, pub->nameAlg, (TPM2B *)&seed, "STORAGE",
+	TSS_KDFA(aeskey, TPM_ALG_SHA256, (TPM2B *)&seed, "STORAGE",
 		 (TPM2B *)&name, &null_2b, T2_AES_KEY_BITS);
 	/* and then the outer HMAC key */
-	hmackey.size = name_alg_size;
-	TSS_KDFA(hmackey.buffer, pub->nameAlg, (TPM2B *)&seed, "INTEGRITY",
-		 &null_2b, &null_2b, name_alg_size * 8);
+	hmackey.size = SHA256_DIGEST_LENGTH;
+	TSS_KDFA(hmackey.buffer, TPM_ALG_SHA256, (TPM2B *)&seed, "INTEGRITY",
+		 &null_2b, &null_2b, SHA256_DIGEST_LENGTH*8);
 	/* OK the ephermeral public point is now the encrypted secret */
 	size = sizeof(ephemeral_pt);
 	buf = enc_secret->secret;
@@ -2917,12 +2916,12 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	memset(null_iv, 0, sizeof(null_iv));
 	TSS_AES_EncryptCFB(sensitive, T2_AES_KEY_BITS, aeskey, null_iv,
 			   p->size - integrity_skip, sensitive);
-	hmac.hashAlg = pub->nameAlg;
+	hmac.hashAlg = TPM_ALG_SHA256;
 	TSS_HMAC_Generate(&hmac, (TPM2B_KEY *)&hmackey,
 			  p->size - integrity_skip, sensitive,
 			  name.size, name.name,
 			  0, NULL);
-	digest.size  = name_alg_size;
+	digest.size  = SHA256_DIGEST_LENGTH;
 	memcpy(digest.buffer, &hmac.digest, digest.size);
 	size = integrity_skip;
 	buf = p->buffer;
