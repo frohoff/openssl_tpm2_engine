@@ -230,6 +230,9 @@ int main(int argc, char **argv)
 	if (rc == 0)
 		exit(0);
 
+	/* tpm2_new_signed_policy frees the key which includes the policy */
+	goto out_err;
+
  out_free_policy:
 	if (ap->name)
 		ASN1_UTF8STRING_free(ap->name);

@@ -2332,7 +2332,6 @@ TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
 	BIO_free(bf);
 
 	TSSPRIVKEY_free(tpk);
-	EVP_PKEY_free(pkey);
 	return 0;
 
  err_free_tpmkey:
