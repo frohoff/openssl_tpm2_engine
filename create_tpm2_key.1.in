@@ -45,6 +45,25 @@ well as comma separated ranges.  So
 
  sha512:1,3-5 means PCRs 1,3,4 and 5 in the sha512 bank
 
+[Import]
+
+In some cases, there may be a need to wrap a key without access to the
+TPM it will be use on.  For these cases an importable key may be
+specified with the --import option.  For this to work, you must use a
+public key corresponding exactly to the one the importing TPM will use
+(Note: only Elliptic Curve parents are currently supported).  For
+instance the owner seed elliptic curve storage key may be produced as
+
+tsscreateprimary -hi o -st -ecc nistp256 -opem parent.pub
+
+Then an importable key may be wrapped to the TPM via:
+
+create_tpm2_key --import parent.pub --wrap key.priv key.tpm
+
+Note that certain parameters must be assumed about a parent when it is
+wrapped, like the template (must be standard restricted decryption
+key) and the name hash (must be sha256).
+
 [Signed Policies]
 
 When the option --signed-policy <key> is used, it creates a key whose

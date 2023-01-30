@@ -80,9 +80,10 @@ usage(char *argv0)
 		"                                details about formatting\n"
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
-		"\t                              to authorize use of the key\n"
+		"\t                              to authorize unsealing\n"
 		"\t-i, --import <pubkey>         Create an importable key with the outer\n"
 		"                                wrapper encrypted to <pubkey>\n"
+		"\t-c, --policy                  Specify a policy for unsealing the data\n"
 		"\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
