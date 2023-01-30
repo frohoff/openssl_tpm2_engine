@@ -1171,6 +1171,17 @@ int tpm2_curve_name_to_nid(TPMI_ECC_CURVE curve)
 	return 0;
 }
 
+int tpm2_curve_to_order(TPMI_ECC_CURVE curve)
+{
+	int i;
+
+	for (i = 0; tpm2_supported_curves[i].name != NULL; i++)
+		if (tpm2_supported_curves[i].curve == curve)
+			return tpm2_supported_curves[i].C[5].s;
+
+	return 0;
+}
+
 TPMI_ECC_CURVE tpm2_nid_to_curve_name(int nid)
 {
 	int i;
@@ -2695,6 +2706,7 @@ TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 	TPM_RC rc = TPM_RC_CURVE;
 	BN_CTX *ctx = NULL;
 	BIGNUM *x, *y;
+	int order;
 
 	if (curve == TPM_ECC_NONE) {
 		fprintf(stderr, "TPM does not support the curve in this EC key\n");
@@ -2726,10 +2738,11 @@ TPM_RC openssl_to_tpm_public_ecc(TPMT_PUBLIC *pub, EVP_PKEY *pkey)
 		goto err;
 	}
 
+	order = tpm2_curve_to_order(curve);
 	VAL_2B(pub->unique.ecc.x, size) =
-		BN_bn2bin(x, VAL_2B(pub->unique.ecc.x, buffer));
+		BN_bn2binpad(x, VAL_2B(pub->unique.ecc.x, buffer), order);
 	VAL_2B(pub->unique.ecc.y, size) =
-		BN_bn2bin(y, VAL_2B(pub->unique.ecc.y, buffer));
+		BN_bn2binpad(y, VAL_2B(pub->unique.ecc.y, buffer), order);
 
 	rc = TPM_RC_SUCCESS;
 
