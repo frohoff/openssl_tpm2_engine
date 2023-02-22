@@ -142,7 +142,7 @@ int main(int argc, char **argv)
 		goto out_free_app_data;
 	}
 
-	name_alg = app_data->name_alg;
+	name_alg = app_data->Public.publicArea.nameAlg;
 
 	itemHandle = rc;
 

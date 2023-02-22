@@ -109,7 +109,7 @@ static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
 	*auth = (*app_data)->auth;
 	*sessionType = (*app_data)->req_policy_session ?
 		       TPM_SE_POLICY : TPM_SE_HMAC;
-	*nameAlg = (*app_data)->name_alg;
+	*nameAlg = (*app_data)->Public.publicArea.nameAlg;
 
 	return tpm2_load_key(tssContext, *app_data, srk_auth, NULL);
 }

@@ -7,7 +7,7 @@ man1_MANS = create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
 CLEANFILES = $(man1_MANS)
 endif
 
-AM_CPPFLAGS = -I ../include
+AM_CPPFLAGS = -I ../include ${DEPRECATION}
 
 bin_PROGRAMS=create_tpm2_key load_tpm2_key seal_tpm2_data unseal_tpm2_data \
 	signed_tpm2_policy

@@ -134,7 +134,6 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 				  TPM_HANDLE key,  UI_METHOD *ui,
 				  void *cb_data, int public_only)
 {
-	TPMT_PUBLIC p;
 	TSS_CONTEXT *tssContext;
 	TPM_RC rc;
 	struct app_data *app_data;
@@ -158,11 +157,10 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	if (rc)
 		goto err;
 	key = tpm2_handle_int(tssContext, key);
-	rc = tpm2_readpublic(tssContext, key, &p);
+	rc = tpm2_readpublic(tssContext, key, &app_data->Public.publicArea);
 	if (rc)
 		goto err_del;
-	app_data->name_alg = p.nameAlg;
-	pkey = tpm2_to_openssl_public(&p);
+	pkey = tpm2_to_openssl_public(&app_data->Public.publicArea);
 	if (!pkey) {
 		fprintf(stderr, "Failed to allocate a new EVP_KEY\n");
 		goto err_del;
@@ -172,7 +170,7 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 	}
 	app_data->key = tpm2_handle_ext(tssContext, key);
 
-	if (VAL(p.objectAttributes) & TPMA_OBJECT_NODA) {
+	if (VAL(app_data->Public.publicArea.objectAttributes) & TPMA_OBJECT_NODA) {
 		/* no DA implications, try an authorization and see
 		 * if NULL is accepted */
 		TPM_HANDLE session;

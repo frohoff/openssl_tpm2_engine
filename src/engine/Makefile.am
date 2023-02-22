@@ -1,4 +1,4 @@
-AM_CPPFLAGS = -I ../include
+AM_CPPFLAGS = -I ../include ${DEPRECATION}
 
 openssl_engine_LTLIBRARIES=libtpm2.la
 openssl_enginedir=@enginesdir@
