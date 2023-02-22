@@ -82,6 +82,11 @@ if test -z "$enginesdir" ; then
     AC_MSG_FAILURE([Failed to find SSL engines directory])
 fi
 
+if test "$ac_have_openssl3" = "1"; then
+    modulesdir=\"`$PKG_CONFIG --variable=modulesdir libcrypto`\"
+    AC_SUBST(modulesdir)
+fi
+
 AC_SUBST(enginesdir)
 
 PKG_CHECK_MODULES([DEPS], [libcrypto])
@@ -166,12 +171,14 @@ AC_OUTPUT([Makefile
 	   src/libcommon/Makefile
 	   src/opensslmissing/Makefile
 	   src/engine/Makefile
-	   src/tools/Makefile])
+	   src/tools/Makefile
+	   src/provider/Makefile])
 
 cat <<EOF
 
 CFLAGS:				${CFLAGS}
 openssl engines directory:	${enginesdir}
+openssl provider directory:	${modulesdir}
 swtpm for testing:		${testtpm}
 tss libraries:                  ${tsslibs}
 

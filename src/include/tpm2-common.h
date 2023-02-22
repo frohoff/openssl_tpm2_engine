@@ -48,6 +48,7 @@ struct app_data {
 	struct policies *pols;
 	int num_pols;
 	int empty_auth;
+	_Atomic int refs;
 	ENGINE *e;
 };
 
