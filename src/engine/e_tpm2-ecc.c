@@ -59,28 +59,18 @@ static EC_KEY_METHOD *tpm2_eck = NULL;
 static int ec_app_data = TPM2_ENGINE_EX_DATA_UNINIT;
 static int active_keys = 0;
 
-static TPM_HANDLE tpm2_load_key_from_ecc(const EC_KEY *eck,
-					 TSS_CONTEXT **tssContext, char **auth,
-					 TPM_SE *sessionType,
-					 struct app_data **app_data,
-					 TPM_ALG_ID *nameAlg)
+static struct app_data *tpm2_ad_from_key(const EC_KEY *eck)
 {
+	struct app_data *app_data;
+
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	/*  const mess up in openssl 1.0.2 */
-	*app_data = ECDSA_get_ex_data((EC_KEY *)eck, ec_app_data);
+	app_data = ECDSA_get_ex_data((EC_KEY *)eck, ec_app_data);
 #else
-	*app_data = EC_KEY_get_ex_data(eck, ec_app_data);
+	app_data = EC_KEY_get_ex_data(eck, ec_app_data);
 #endif
 
-	if (!*app_data)
-		return 0;
-
-	*auth = (*app_data)->auth;
-	*sessionType = (*app_data)->req_policy_session ?
-		       TPM_SE_POLICY : TPM_SE_HMAC;
-	*nameAlg = (*app_data)->Public.publicArea.nameAlg;
-
-	return tpm2_load_key(tssContext, *app_data, srk_auth, NULL);
+	return app_data;
 }
 
 void tpm2_bind_key_to_engine_ecc(ENGINE *e, EVP_PKEY *pkey, struct app_data *data)
@@ -129,157 +119,26 @@ static ECDSA_SIG *tpm2_ecdsa_sign(const unsigned char *dgst, int dgst_len,
 				  const BIGNUM *kinv, const BIGNUM *rp,
 				  EC_KEY *eck)
 {
-	TPM_RC rc;
-	TPM_HANDLE keyHandle;
-	DIGEST_2B digest;
-	TPMT_SIG_SCHEME inScheme;
-	TPMT_SIGNATURE signature;
-	TSS_CONTEXT *tssContext;
-	char *auth;
-	TPM_HANDLE authHandle;
-	TPM_SE sessionType;
-	ECDSA_SIG *sig;
-	BIGNUM *r, *s;
-	TPM_ALG_ID nameAlg;
-	struct app_data *app_data;
+	struct app_data *app_data = tpm2_ad_from_key(eck);
 
-	/* The TPM insists on knowing the digest type, so
-	 * calculate that from the size */
-	switch (dgst_len) {
-	case SHA_DIGEST_LENGTH:
-		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA1;
-		break;
-	case SHA256_DIGEST_LENGTH:
-		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA256;
-		break;
-	case SHA384_DIGEST_LENGTH:
-		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA384;
-		break;
-#ifdef TPM_ALG_SHA512
-	case SHA512_DIGEST_LENGTH:
-		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA512;
-		break;
-#endif
-	default:
-		printf("ECDSA signature: Unknown digest length, cannot deduce hash type for TPM\n");
-		return NULL;
-	}
-
-	keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
-					   &sessionType, &app_data, &nameAlg);
-	if (keyHandle == 0) {
-		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
-		return NULL;
-	}
-
-	inScheme.scheme = TPM_ALG_ECDSA;
-	digest.size = dgst_len;
-	memcpy(digest.buffer, dgst, dgst_len);
-
-	sig = NULL;
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
-				     nameAlg);
-	if (rc)
-		goto out;
-
-	if (sessionType == TPM_SE_POLICY) {
-		rc = tpm2_init_session(tssContext, authHandle,
-				       app_data, nameAlg);
-		if (rc)
-			goto out;
-	}
-
-	rc = tpm2_Sign(tssContext, keyHandle, &digest, &inScheme, &signature,
-		       authHandle, auth);
-	if (rc) {
-		tpm2_error(rc, "TPM2_Sign");
-		tpm2_flush_handle(tssContext, authHandle);
-		goto out;
-	}
-
-	sig = ECDSA_SIG_new();
-	if (!sig)
-		goto out;
-
-	r = BN_bin2bn(VAL_2B(signature.signature.ecdsa.signatureR, buffer),
-		      VAL_2B(signature.signature.ecdsa.signatureR, size),
-		      NULL);
-	s = BN_bin2bn(VAL_2B(signature.signature.ecdsa.signatureS, buffer),
-		      VAL_2B(signature.signature.ecdsa.signatureS, size),
-		      NULL);
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000
-	sig->r = r;
-	sig->s = s;
-#else
-	ECDSA_SIG_set0(sig, r, s);
-#endif
- out:
-	tpm2_unload_key(tssContext, keyHandle);
-	return sig;
+	return tpm2_sign_ecc(app_data, dgst, dgst_len, srk_auth);
 }
 
 static int tpm2_ecc_compute_key(unsigned char **psec, size_t *pseclen,
 				const EC_POINT *pt, const EC_KEY *eck)
 {
-	TPM_RC rc;
-	TPM_HANDLE keyHandle;
 	TPM2B_ECC_POINT inPoint;
-	TPM2B_ECC_POINT outPoint;
-	TSS_CONTEXT *tssContext;
-	TPM_HANDLE authHandle;
-	TPM_SE sessionType;
-	char *auth;
-	size_t len;
-	TPM_ALG_ID nameAlg;
 	struct app_data *app_data;
-	int ret;
 
-	keyHandle = tpm2_load_key_from_ecc(eck, &tssContext, &auth,
-					   &sessionType, &app_data, &nameAlg);
-	if (keyHandle == 0) {
-		fprintf(stderr, "Failed to get Key Handle in TPM EC key routines\n");
-		return 0;
-	}
-	len = tpm2_get_public_point(&inPoint, EC_KEY_get0_group(eck), pt);
-	if (!len)
+	app_data = tpm2_ad_from_key(eck);
+	if (!app_data)
 		return 0;
 
-	ret = 0;
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
-				     nameAlg);
-	if (rc)
-		goto out;
+	*pseclen = tpm2_get_public_point(&inPoint, EC_KEY_get0_group(eck), pt);
+	if (!*pseclen)
+		return 0;
 
-	if (sessionType == TPM_SE_POLICY) {
-		rc = tpm2_init_session(tssContext, authHandle,
-				       app_data, nameAlg);
-		if (rc)
-			goto out;
-	}
-
-	rc = tpm2_ECDH_ZGen(tssContext, keyHandle, &inPoint, &outPoint,
-			    authHandle, auth);
-	if (rc) {
-		tpm2_error(rc, "TPM2_ECDH_ZGen");
-		tpm2_flush_handle(tssContext, authHandle);
-		goto out;
-	}
-
-	*psec = OPENSSL_malloc(len);
-	if (!*psec)
-		goto out;
-	*pseclen = len;
-	memset(*psec, 0, len);
-
-	/* zero pad the X point */
-	memcpy(*psec + len - VAL_2B(outPoint.point.x, size),
-	       VAL_2B(outPoint.point.x, buffer),
-	       VAL_2B(outPoint.point.x, size));
-	ret = 1;
- out:
-	tpm2_unload_key(tssContext, keyHandle);
-	return ret;
+	return tpm2_ecdh_x(app_data, psec, pseclen, &inPoint, srk_auth);
 }
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000

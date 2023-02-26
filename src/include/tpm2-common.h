@@ -61,7 +61,7 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			       TPM_HANDLE salt_key, TPM_SE sessionType,
 			       TPM_ALG_ID name_alg);
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
-			 struct app_data *app_data, TPM_ALG_ID name_alg);
+			 const struct app_data *app_data, TPM_ALG_ID name_alg);
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth);
 TPMI_ECC_CURVE tpm2_curve_name_to_TPMI(const char *name);
@@ -82,7 +82,7 @@ int tpm2_load_engine_file(const char *filename, struct app_data **app_data,
 			  EVP_PKEY **ppkey, UI_METHOD *ui, void *cb_data,
 			  const char *srk_auth, int get_key_auth,
 			  int public_only);
-TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, struct app_data *app_data,
+TPM_HANDLE tpm2_load_key(TSS_CONTEXT **tsscp, const struct app_data *app_data,
 			 const char *srk_auth, uint32_t *psession);
 void tpm2_unload_key(TSS_CONTEXT *tssContext, TPM_HANDLE key);
 void tpm2_delete(struct app_data *app_data);
@@ -121,4 +121,8 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 		      PRIVATE_2B *p,
 		      ENCRYPTED_SECRET_2B *enc_secret);
 int tpm2_load_bf(BIO *bf, struct app_data *app_data, const char *srk_auth);
+ECDSA_SIG *tpm2_sign_ecc(const struct app_data *ad, const unsigned char *dgst,
+			 int dgst_len, char *srk_auth);
+int tpm2_ecdh_x(struct app_data *ad, unsigned char **psec, size_t *pseclen,
+		const TPM2B_ECC_POINT *inPoint, const char *srk_auth);
 #endif

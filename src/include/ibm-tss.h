@@ -253,7 +253,7 @@ tpm2_Sign(TSS_CONTEXT *tssContext, TPM_HANDLE keyHandle, DIGEST_2B *digest,
 
 static inline TPM_RC
 tpm2_ECDH_ZGen(TSS_CONTEXT *tssContext, TPM_HANDLE keyHandle,
-	       TPM2B_ECC_POINT *inPoint, TPM2B_ECC_POINT *outPoint,
+	       const TPM2B_ECC_POINT *inPoint, TPM2B_ECC_POINT *outPoint,
 	       TPM_HANDLE auth, const char *authVal)
 {
 	ECDH_ZGen_In in;
@@ -455,7 +455,7 @@ tpm2_VerifySignature(TSS_CONTEXT *tssContext, TPM_HANDLE keyHandle,
 
 static inline TPM_RC
 tpm2_Load(TSS_CONTEXT *tssContext, TPM_HANDLE parentHandle,
-	  PRIVATE_2B *inPrivate, TPM2B_PUBLIC *inPublic,
+	  PRIVATE_2B *inPrivate, const TPM2B_PUBLIC *inPublic,
 	  TPM_HANDLE *objectHandle,
 	  TPM_HANDLE auth, const char *authVal)
 {
