@@ -96,24 +96,6 @@ static int tpm2_rsa_pub_enc(int flen,
 
 #endif
 
-static TPM_HANDLE tpm2_load_key_from_rsa(RSA *rsa, TSS_CONTEXT **tssContext,
-					 char **auth, TPM_SE *sessionType,
-					 struct app_data **app_data,
-					 TPM_ALG_ID *nameAlg)
-{
-	*app_data = RSA_get_ex_data(rsa, ex_app_data);
-
-	if (!*app_data)
-		return 0;
-
-	*auth = (*app_data)->auth;
-	*sessionType = (*app_data)->req_policy_session ?
-		       TPM_SE_POLICY : TPM_SE_HMAC;
-	*nameAlg = (*app_data)->Public.publicArea.nameAlg;
-
-	return tpm2_load_key(tssContext, *app_data, srk_auth, NULL);
-}
-
 void tpm2_bind_key_to_engine_rsa(ENGINE *e, EVP_PKEY *pkey, struct app_data *data)
 {
 	RSA *rsa = EVP_PKEY_get1_RSA(pkey);
@@ -159,73 +141,14 @@ static int tpm2_rsa_priv_dec(int flen,
 			    RSA *rsa,
 			    int padding)
 {
-	TPM_RC rc;
-	int rv;
-	TSS_CONTEXT *tssContext;
-	TPM_HANDLE keyHandle;
+	const struct app_data *ad = RSA_get_ex_data(rsa, ex_app_data);
 	PUBLIC_KEY_RSA_2B cipherText;
-	TPMT_RSA_DECRYPT inScheme;
-	PUBLIC_KEY_RSA_2B message;
-	char *auth;
-	TPM_HANDLE authHandle;
-	TPM_SE sessionType;
-	TPM_ALG_ID nameAlg;
-	struct app_data *app_data;
-
-	keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
-					   &sessionType, &app_data, &nameAlg);
-
-	if (keyHandle == 0) {
-		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
-
-		return -1;
-	}
-
-	rv = -1;
-	if (padding == RSA_PKCS1_PADDING) {
-		inScheme.scheme = TPM_ALG_RSAES;
-	} else if (padding == RSA_NO_PADDING) {
-		inScheme.scheme = TPM_ALG_NULL;
-	} else if (padding == RSA_PKCS1_OAEP_PADDING) {
-		inScheme.scheme = TPM_ALG_OAEP;
-		/* for openssl RSA, the padding is hard coded */
-		inScheme.details.oaep.hashAlg = TPM_ALG_SHA1;
-	} else {
-		fprintf(stderr, "Can't process padding type: %d\n", padding);
-		goto out;
-	}
 
 	cipherText.size = flen;
 	memcpy(cipherText.buffer, from, flen);
 
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
-				     nameAlg);
-	if (rc)
-		goto out;
-
-	if (sessionType == TPM_SE_POLICY) {
-		rc = tpm2_init_session(tssContext, authHandle,
-				       app_data, nameAlg);
-		if (rc)
-			goto out;
-	}
-
-	rc = tpm2_RSA_Decrypt(tssContext, keyHandle, &cipherText, &inScheme,
-			      &message, authHandle, auth, TPMA_SESSION_ENCRYPT);
-
-	if (rc) {
-		tpm2_error(rc, "TPM2_RSA_Decrypt");
-		/* failure means auth handle is not flushed */
-		tpm2_flush_handle(tssContext, authHandle);
-		goto out;
-	}
- 
-	memcpy(to, message.buffer, message.size);
-
-	rv = message.size;
- out:
-	tpm2_unload_key(tssContext, keyHandle);
-	return rv;
+	return tpm2_rsa_decrypt(ad, &cipherText, to, padding,
+				TPMA_SESSION_ENCRYPT, srk_auth);
 }
 
 static int tpm2_rsa_priv_enc(int flen,
@@ -234,27 +157,10 @@ static int tpm2_rsa_priv_enc(int flen,
 			    RSA *rsa,
 			    int padding)
 {
-	TPM_RC rc;
-	int rv, size;
-	TPM_HANDLE keyHandle;
+	const struct app_data *ad = RSA_get_ex_data(rsa, ex_app_data);
 	PUBLIC_KEY_RSA_2B cipherText;
-	TPMT_RSA_DECRYPT inScheme;
-	PUBLIC_KEY_RSA_2B message;
-	TSS_CONTEXT *tssContext;
-	char *auth;
-	TPM_HANDLE authHandle;
-	TPM_SE sessionType;
-	TPM_ALG_ID nameAlg;
-	struct app_data *app_data;
+	const int size = RSA_size(rsa);
 
-	/* this is slightly paradoxical that we're doing a Decrypt
-	 * operation: the only material difference between decrypt and
-	 * encrypt is where the padding is applied or checked, so if
-	 * you apply your own padding up to the RSA block size and use
-	 * TPM_ALG_NULL, which means no padding check, a decrypt
-	 * operation effectively becomes an encrypt */
-	size = RSA_size(rsa);
-	inScheme.scheme = TPM_ALG_NULL;
 	cipherText.size = size;
 
 	/* note: currently openssl doesn't do OAEP signatures and all
@@ -271,46 +177,15 @@ static int tpm2_rsa_priv_enc(int flen,
 		return -1;
 	}
 
-	keyHandle = tpm2_load_key_from_rsa(rsa, &tssContext, &auth,
-					   &sessionType, &app_data, &nameAlg);
-
-	if (keyHandle == 0) {
-		fprintf(stderr, "Failed to get Key Handle in TPM RSA routines\n");
-
-		return -1;
-	}
-
-	rv = -1;
-	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
-				     nameAlg);
-	if (rc)
-		goto out;
-
-	if (sessionType == TPM_SE_POLICY) {
-		rc = tpm2_init_session(tssContext, authHandle,
-				       app_data, nameAlg);
-		if (rc)
-			goto out;
-	}
-
-	rc = tpm2_RSA_Decrypt(tssContext, keyHandle, &cipherText, &inScheme,
-			      &message, authHandle, auth, TPMA_SESSION_DECRYPT);
-
-	if (rc) {
-		tpm2_error(rc, "TPM2_RSA_Decrypt");
-		/* failure means auth handle is not flushed */
-		tpm2_flush_handle(tssContext, authHandle);
-		goto out;
-	}
-
-	memcpy(to, message.buffer, message.size);
-
-	rv = message.size;
-
- out:
-	tpm2_unload_key(tssContext, keyHandle);
-
-	return rv;
+	/* this is slightly paradoxical that we're doing a Decrypt
+	 * operation: the only material difference between decrypt and
+	 * encrypt is where the padding is applied or checked, so if
+	 * you apply your own padding up to the RSA block size and use
+	 * TPM_ALG_NULL (RSA_NO_PADDING), which means no padding
+	 * check, a decrypt operation effectively becomes an
+	 * encrypt */
+	return tpm2_rsa_decrypt(ad, &cipherText, to, RSA_NO_PADDING,
+				TPMA_SESSION_DECRYPT, srk_auth);
 }
 
 int tpm2_setup_rsa_methods(void)

@@ -125,4 +125,7 @@ ECDSA_SIG *tpm2_sign_ecc(const struct app_data *ad, const unsigned char *dgst,
 			 int dgst_len, char *srk_auth);
 int tpm2_ecdh_x(struct app_data *ad, unsigned char **psec, size_t *pseclen,
 		const TPM2B_ECC_POINT *inPoint, const char *srk_auth);
+int tpm2_rsa_decrypt(const struct app_data *ad, PUBLIC_KEY_RSA_2B *cipherText,
+		     unsigned char *to, int padding, int protection,
+		     char *srk_auth);
 #endif

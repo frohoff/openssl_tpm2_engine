@@ -573,6 +573,73 @@ struct tpm2_ECC_Curves tpm2_supported_curves[] = {
 	{ .name = NULL, }
 };
 
+int tpm2_rsa_decrypt(const struct app_data *ad, PUBLIC_KEY_RSA_2B *cipherText,
+		     unsigned char *to, int padding, int protection,
+		     char *srk_auth)
+{
+	TPM_RC rc;
+	int rv;
+	TSS_CONTEXT *tssContext;
+	TPM_HANDLE keyHandle;
+	TPMT_RSA_DECRYPT inScheme;
+	PUBLIC_KEY_RSA_2B message;
+	TPM_HANDLE authHandle;
+	TPM_SE sessionType;
+
+	keyHandle = tpm2_load_key(&tssContext, ad, srk_auth, NULL);
+
+	if (keyHandle == 0) {
+		fprintf(stderr, "Failed to get Key Handle in TPM RSA key routines\n");
+
+		return -1;
+	}
+
+	rv = -1;
+	if (padding == RSA_PKCS1_PADDING) {
+		inScheme.scheme = TPM_ALG_RSAES;
+	} else if (padding == RSA_NO_PADDING) {
+		inScheme.scheme = TPM_ALG_NULL;
+	} else if (padding == RSA_PKCS1_OAEP_PADDING) {
+		inScheme.scheme = TPM_ALG_OAEP;
+		/* for openssl RSA, the padding is hard coded */
+		inScheme.details.oaep.hashAlg = TPM_ALG_SHA1;
+	} else {
+		fprintf(stderr, "Can't process padding type: %d\n", padding);
+		goto out;
+	}
+
+	sessionType = ad->req_policy_session ? TPM_SE_POLICY : TPM_SE_HMAC;
+
+	rc = tpm2_get_session_handle(tssContext, &authHandle, 0, sessionType,
+				     ad->Public.publicArea.nameAlg);
+	if (rc)
+		goto out;
+
+	if (sessionType == TPM_SE_POLICY) {
+		rc = tpm2_init_session(tssContext, authHandle,
+				       ad, ad->Public.publicArea.nameAlg);
+		if (rc)
+			goto out;
+	}
+
+	rc = tpm2_RSA_Decrypt(tssContext, keyHandle, cipherText, &inScheme,
+			      &message, authHandle, ad->auth, protection);
+
+	if (rc) {
+		tpm2_error(rc, "TPM2_RSA_Decrypt");
+		/* failure means auth handle is not flushed */
+		tpm2_flush_handle(tssContext, authHandle);
+		goto out;
+	}
+
+	memcpy(to, message.buffer, message.size);
+
+	rv = message.size;
+ out:
+	tpm2_unload_key(tssContext, keyHandle);
+	return rv;
+}
+
 ECDSA_SIG *tpm2_sign_ecc(const struct app_data *ad, const unsigned char *dgst,
 			 int dgst_len, char *srk_auth)
 {
