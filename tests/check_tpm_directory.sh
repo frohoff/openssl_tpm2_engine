@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 printenv|grep dir
 
@@ -38,7 +37,6 @@ cur_user=$(id -u -n -r)
 cur_group=$(id -g -n -r)
 
 fakeroot sh -c '
-bindir=${srcdir}/..
 
 printenv|grep dir
 

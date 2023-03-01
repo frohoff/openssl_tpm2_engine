@@ -1,5 +1,5 @@
 #!/bin/bash
-bindir=${srcdir}/..
+set -x
 
 ##
 # test is

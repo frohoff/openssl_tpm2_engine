@@ -2,7 +2,6 @@
 set -x
 
 
-bindir=${srcdir}/..
 NV=81000101
 NV2=81000102
 

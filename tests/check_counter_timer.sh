@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 ##
 # create a policy based on the tpm current clock the failing policy

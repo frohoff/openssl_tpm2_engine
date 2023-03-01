@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 # export the parent key as a public key
 prim=$(tsscreateprimary -ecc nistp256 -hi o -opem srk.pub | sed 's/Handle //') || exit 1

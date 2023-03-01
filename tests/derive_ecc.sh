@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 ##
 # test is to check that the key derivation works

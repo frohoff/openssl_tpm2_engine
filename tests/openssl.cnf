@@ -18,7 +18,7 @@ engines		= engines_section
 tpm2		= tpm2_section
 
 [tpm2_section]
-dynamic_path	= $ENV::srcdir/../.libs/libtpm2.so
+dynamic_path	= $ENV::srcdir/../src/engine/.libs/libtpm2.so
 init		= 1
 PIN		= $ENV::SRKPIN
 NVPREFIX	= $ENV::NVPREFIX

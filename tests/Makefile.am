@@ -37,6 +37,7 @@ tpm_server_found:
 
 AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; export TPM_INTERFACE_TYPE; \
 	srcdir=$(abs_srcdir); export srcdir; \
+	bindir=$(abs_srcdir)/../src/tools; export bindir; \
 	OPENSSL_CONF=$(abs_srcdir)/openssl.cnf; export OPENSSL_CONF; \
 	TPMSERVER=$(TPMSERVER); export TPMSERVER; \
 	TSSTYPE=@TSSTYPE@; export TSSTYPE; \

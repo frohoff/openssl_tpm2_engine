@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 for n in sha1 sha256 sha384; do
     echo "Checking Name Hash $n"

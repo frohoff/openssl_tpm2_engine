@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 openssl genrsa 2048 > key.priv || exit 1
 openssl rsa -in key.priv -out key.pub -pubout || exit 1

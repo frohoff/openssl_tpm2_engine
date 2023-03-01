@@ -137,8 +137,11 @@ AC_PATH_PROG(SWTPM, swtpm,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
 AC_PATH_PROG(SWTPM_IOCTL, swtpm_ioctl,,/bin:/usr/bin:/usr/lib/ibmtss:/usr/libexec/ibmtss)
 AC_CHECK_PROG(XML2RFC, xml2rfc, xml2rfc)
 AM_CONDITIONAL(HAVE_XML2RFC, test -n "${XML2RFC}")
-CFLAGS="$CFLAGS -Wall"
+CFLAGS="$CFLAGS -Wall -Werror"
 SHREXT=$shrext_cmds
+if test -n "$ac_have_openssl3"; then
+   CFLAGS="$CFLAGS  -DOPENSSL_API_COMPAT=0x10100000L"
+fi
 AC_SUBST(CFLAGS)
 AC_SUBST(TSS_INCLUDE)
 AC_SUBST(SHREXT)
@@ -156,7 +159,12 @@ fi
 
 AC_SUBST(testtpm)
 
-AC_OUTPUT([Makefile tests/Makefile doc/Makefile])
+AC_OUTPUT([Makefile
+	   tests/Makefile
+	   doc/Makefile
+	   src/libcommon/Makefile
+	   src/engine/Makefile
+	   src/tools/Makefile])
 
 cat <<EOF
 

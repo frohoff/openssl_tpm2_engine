@@ -1,7 +1,6 @@
 #!/bin/bash
 
 
-bindir=${srcdir}/..
 
 ##
 # test is

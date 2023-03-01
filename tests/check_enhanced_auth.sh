@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 tss_pcrreset_cmd=tsspcrreset
 tss_pcrextend_cmd=tsspcrextend

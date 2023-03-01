@@ -1,6 +1,5 @@
 #!/bin/bash
 
-bindir=${srcdir}/..
 
 ##
 # The Intel tss currently fails with the null seed, so skip the test
