@@ -164,6 +164,7 @@ AC_OUTPUT([Makefile
 	   tests/engine/Makefile
 	   doc/Makefile
 	   src/libcommon/Makefile
+	   src/opensslmissing/Makefile
 	   src/engine/Makefile
 	   src/tools/Makefile])
 
