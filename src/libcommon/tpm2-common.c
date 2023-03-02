@@ -586,10 +586,13 @@ ECDSA_SIG *tpm2_sign_ecc(const struct app_data *ad, const unsigned char *dgst,
 	TPM_SE sessionType;
 	ECDSA_SIG *sig;
 	BIGNUM *r, *s;
+	int len = tpm2_curve_to_order(ad->Public.publicArea.parameters.eccDetail.curveID);
 
-	/* The TPM insists on knowing the digest type, so
-	 * calculate that from the size */
-	switch (dgst_len) {
+	/* so we give it a digest equal to the key length, except if that
+	 * goes over the max known digest size, in which case we give it that */
+	if (len > SHA512_DIGEST_LENGTH)
+		len = SHA512_DIGEST_LENGTH;
+	switch (len) {
 	case SHA_DIGEST_LENGTH:
 		inScheme.details.ecdsa.hashAlg = TPM_ALG_SHA1;
 		break;
@@ -614,8 +617,13 @@ ECDSA_SIG *tpm2_sign_ecc(const struct app_data *ad, const unsigned char *dgst,
 		return NULL;
 
 	inScheme.scheme = TPM_ALG_ECDSA;
-	digest.size = dgst_len;
-	memcpy(digest.buffer, dgst, dgst_len);
+	digest.size = len;
+	if (len < dgst_len) {
+		memcpy(digest.buffer, dgst, len);
+	} else {
+		memset(digest.buffer, 0, len);
+		memcpy(digest.buffer + len - dgst_len, dgst, dgst_len);
+	}
 
 	sessionType = ad->req_policy_session ? TPM_SE_POLICY : TPM_SE_HMAC;
 
