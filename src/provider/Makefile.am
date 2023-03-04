@@ -7,7 +7,7 @@ openssl_providerdir=@modulesdir@
 
 libtpm2_la_LDFLAGS= -no-undefined -avoid-version
 libtpm2_la_LIBADD=${COMMONLIB} ${DEPS_LIBS}
-libtpm2_la_SOURCES=provider.c decode_encode.c keymgmt.c
+libtpm2_la_SOURCES=provider.c decode_encode.c keymgmt.c signatures.c
 libtpm2_la_CFLAGS=${DEPS_CFLAGS} -g -Werror
 
 install-data-hook:

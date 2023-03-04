@@ -31,4 +31,8 @@ extern const OSSL_ALGORITHM decoders[];
 
 extern const OSSL_ALGORITHM keymgmts[];
 
+/* signatures.c */
+
+extern const OSSL_ALGORITHM signatures[];
+
 #endif

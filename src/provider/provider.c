@@ -70,6 +70,7 @@ static struct {
 	QOP(OSSL_OP_DECODER, decoders),
 	QOP(OSSL_OP_ENCODER, encoders),
 	QOP(OSSL_OP_KEYMGMT, keymgmts),
+	QOP(OSSL_OP_SIGNATURE, signatures),
 	QOP(OSSL_OP_STORE, NULL),
 };
 
