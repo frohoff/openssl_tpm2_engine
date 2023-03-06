@@ -31,8 +31,16 @@ extern const OSSL_ALGORITHM decoders[];
 
 extern const OSSL_ALGORITHM keymgmts[];
 
+void *tpm2_keymgmt_new(void *pctx); /* needed by decode_encode.c */
+
 /* signatures.c */
 
 extern const OSSL_ALGORITHM signatures[];
+
+/* decryption.c */
+
+extern const OSSL_ALGORITHM asymciphers[];
+extern const OSSL_ALGORITHM keyexchs[];
+
 
 #endif

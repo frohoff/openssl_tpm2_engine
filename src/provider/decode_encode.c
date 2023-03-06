@@ -48,7 +48,7 @@ static int tpm2_pkey_decode(void *ctx, OSSL_CORE_BIO *cin, int selection,
 			    OSSL_PASSPHRASE_CALLBACK *pw_cb, void *pw_cbarg,
 			    TPM_ALG_ID alg)
 {
-	struct app_data *ad = OPENSSL_zalloc(sizeof(*ad));
+	struct app_data *ad = tpm2_keymgmt_new(ctx);
 	OSSL_LIB_CTX *libctx = ctx;
 
 	BIO *in = BIO_new_from_core_bio(libctx, cin);
