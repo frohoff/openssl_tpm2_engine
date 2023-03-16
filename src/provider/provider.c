@@ -73,7 +73,7 @@ static struct {
 	QOP(OSSL_OP_SIGNATURE, signatures),
 	QOP(OSSL_OP_ASYM_CIPHER, asymciphers),
 	QOP(OSSL_OP_KEYEXCH, keyexchs),
-	QOP(OSSL_OP_STORE, NULL),
+	QOP(OSSL_OP_STORE, stores),
 };
 
 static const OSSL_ALGORITHM *p_query(void *provctx, int operation_id,
@@ -102,11 +102,12 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 {
 	OSSL_LIB_CTX *libctx;
 	const OSSL_DISPATCH *fns = in;
+	int i;
 	OSSL_PARAM provider_params[] = {
 		OSSL_PARAM_utf8_ptr("PIN", &srk_auth, 0),
+		OSSL_PARAM_utf8_ptr("NVPREFIX", &nvprefix, 0),
 		OSSL_PARAM_END
 	};
-
 
 	*out = prov_fns;
 
@@ -126,6 +127,12 @@ int OSSL_provider_init(const OSSL_CORE_HANDLE *handle,
 		fprintf(stderr, "core failed to load params\n");
 		goto err;
 	}
+	/* scheme can't have a ':' in it and the engine did have it */
+	for (i = strlen(nvprefix) - 1; i > 0; --i)
+		if (nvprefix[i] == ':')
+			nvprefix[i] = 0;
+
+	stores[0].algorithm_names = nvprefix;
 
 	libctx = OSSL_LIB_CTX_new_from_dispatch(handle, in);
 	if (libctx == NULL) {

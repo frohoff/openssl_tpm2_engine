@@ -73,7 +73,7 @@ static int tpm2_keymgmt_has(const void *ref, int selection)
 	if (selection & OSSL_KEYMGMT_SELECT_PUBLIC_KEY)
 		return 1;
 	if (selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY)
-		return ad->priv != NULL;
+		return ad->priv != NULL || ad->key != 0;
 	return 0;
 }
 

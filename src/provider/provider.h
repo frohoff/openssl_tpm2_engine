@@ -16,6 +16,7 @@
 #include "tpm2-common.h"
 
 extern char *srk_auth;
+extern char *nvprefix;
 
 /* core context functions in provider.h */
 void *tpm2_passthrough_newctx(void *ctx);
@@ -41,6 +42,10 @@ extern const OSSL_ALGORITHM signatures[];
 
 extern const OSSL_ALGORITHM asymciphers[];
 extern const OSSL_ALGORITHM keyexchs[];
+
+/* store.c */
+
+extern OSSL_ALGORITHM stores[];
 
 
 #endif
