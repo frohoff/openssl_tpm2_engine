@@ -18,7 +18,7 @@ fi
 ${bindir}/create_tpm2_key key.tpm -c ${testdir}/policies/policy_bogus.txt
 a=0; while [ $a -lt 5 ]; do
     a=$[$a+1]
-    echo "This is a message" | openssl pkeyutl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && exit 1
+    echo "This is a message" | openssl pkeyutl -sign $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && exit 1
 done
 
 ##
@@ -51,8 +51,8 @@ for h in "sha1" "" "sha384"; do
     # 4. verify the message through the public key
     echo "This is a Message" > plain.txt
     ${bindir}/create_tpm2_key ${n} -a -k passw0rd key2.tpm -c ${testdir}/policies/policy_authvalue.txt && \
-    openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
-    openssl pkeyutl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -passin pass:passw0rd -in plain.txt -out tmp.msg && \
+    openssl rsa $ENGINE $INFORM -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
+    openssl pkeyutl -sign $ENGINE $KEYFORM -inkey key2.tpm -passin pass:passw0rd -in plain.txt -out tmp.msg && \
     openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin || exit 1
 
     ##
@@ -66,8 +66,8 @@ for h in "sha1" "" "sha384"; do
     ${tss_pcrreset_cmd} -ha 16
     ${tss_pcrextend_cmd} -ha 16 -ic aaa
     ${bindir}/create_tpm2_key ${n} key2.tpm -c ${testdir}/policies/policy_pcr${h}.txt && \
-	openssl rsa -engine tpm2 -inform engine -in key2.tpm -pubout -out key2.pub && \
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -out tmp.msg && \
+	openssl rsa $ENGINE $INFORM -in key2.tpm -pubout -out key2.pub && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key2.tpm -out tmp.msg && \
 	openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin || exit 1
 
     ##
@@ -79,8 +79,8 @@ for h in "sha1" "" "sha384"; do
     # 5. verify the message through the public key
     ${tss_pcrreset_cmd} -ha 16
     ${bindir}/create_tpm2_key ${n} key2.tpm -c ${testdir}/policies/policy_pcr${h}.txt
-    openssl rsa -engine tpm2 -inform engine -in key2.tpm -pubout -out key2.pub && \
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -out tmp.msg && \
+    openssl rsa $ENGINE $INFORM -in key2.tpm -pubout -out key2.pub && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key2.tpm -out tmp.msg && \
 	openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin
     if [ $? -ne 1 ]; then
 	echo "TPM key should not be accessible"
@@ -99,8 +99,8 @@ for h in "sha1" "" "sha384"; do
     ${tss_pcrreset_cmd} -ha 16
     ${tss_pcrextend_cmd} -ha 16 -ic aaa
     ${bindir}/create_tpm2_key ${n} -a -k passw0rd key2.tpm -c policy_authvalue_pcr.txt && \
-	openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -passin pass:passw0rd -out tmp.msg && \
+	openssl rsa $ENGINE $INFORM -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key2.tpm -passin pass:passw0rd -out tmp.msg && \
 	openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin || exit 1
 
     ##
@@ -115,8 +115,8 @@ for h in "sha1" "" "sha384"; do
     ${tss_pcrreset_cmd} -ha 16
     ${tss_pcrextend_cmd} -ha 16 -ic aaa
     ${bindir}/create_tpm2_key ${n} -a -k passw0rd key2.tpm -c policy_pcr_authvalue.txt && \
-	openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -passin pass:passw0rd -out tmp.msg && \
+	openssl rsa $ENGINE $INFORM -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key2.tpm -passin pass:passw0rd -out tmp.msg && \
 	openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin || exit 1
 
     ##
@@ -127,25 +127,25 @@ for h in "sha1" "" "sha384"; do
     # 4. extend mentioned PCR and verify key fails
     ##
     ${bindir}/create_tpm2_key ${n} -a -k passw0rd key.tpm --pcr-lock 1,2,3-15,17-23 --pcr-lock sha1:1-4 --pcr-lock sha384:10-20 || exit 1
-    openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key.tpm -pubout -out key.pub || exit 1
-    openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg || exit 1
+    openssl rsa $ENGINE $INFORM -passin pass:passw0rd -in key.tpm -pubout -out key.pub || exit 1
+    openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -passin pass:passw0rd -out tmp.msg || exit 1
     openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
     ${tss_pcrextend_cmd} -ha 16 -ic $RANDOM
     ${tss_pcrextend_cmd} -ha 5 -halg sha1 -ic $RANDOM
     ${tss_pcrextend_cmd} -ha 9 -halg sha384 -ic $RANDOM
-    openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg || exit 1
+    openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -passin pass:passw0rd -out tmp.msg || exit 1
     openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
     ${tss_pcrextend_cmd} -ha 1 -halg sha1 -ic $RANDOM
-    openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg && exit 1
+    openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -passin pass:passw0rd -out tmp.msg && exit 1
     ##
     # Check a smaller PCR lock with no auth
     ##
     ${bindir}/create_tpm2_key ${n} --pcr-lock 2,4,7,10 --pcr-lock sha1:1,3 key.tpm || exit 1
-    openssl rsa -engine tpm2 -inform engine -in key.tpm -pubout -out key.pub || exit 1
-    openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg || exit 1
+    openssl rsa $ENGINE $INFORM -in key.tpm -pubout -out key.pub || exit 1
+    openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg || exit 1
     openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
     ${tss_pcrextend_cmd} -ha 4 -halg sha256 -ic $RANDOM
-    echo "This is a message" | openssl pkeyutl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && exit 1
+    echo "This is a message" | openssl pkeyutl -sign $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && exit 1
 done
 
 exit 0

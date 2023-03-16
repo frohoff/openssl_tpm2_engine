@@ -43,7 +43,11 @@ AM_TESTS_ENVIRONMENT = TPM_INTERFACE_TYPE=socsim; export TPM_INTERFACE_TYPE; \
 	TPMSERVER=$(TPMSERVER); export TPMSERVER; \
 	TSSTYPE=@TSSTYPE@; export TSSTYPE; \
 	SWTPM=$(SWTPM); export SWTPM; \
-	SWTPM_IOCTL=$(SWTPM_IOCTL); export SWTPM_IOCTL;
+	SWTPM_IOCTL=$(SWTPM_IOCTL); export SWTPM_IOCTL; \
+	ENGINE="-engine tpm2"; export ENGINE; \
+	INFORM="-inform engine"; export INFORM; \
+	KEYFORM="-keyform engine"; export KEYFORM; \
+	CAKEYFORM="-CAkeyform engine"; export CAKEYFORM;
 
 TEST_EXTENSIONS = .sh
 

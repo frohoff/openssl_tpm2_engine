@@ -28,7 +28,7 @@ for curve in $(${bindir}/create_tpm2_key --list-curves); do
     fi
     echo "Checking curve ${curve} explicitly named"
     ${bindir}/create_tpm2_key -p 81000001 --ecc ${curve} key0.tpm || exit 1
-    openssl pkey -engine tpm2 -inform engine -in key0.tpm -pubout -out key0.pub || exit 1
+    openssl pkey $ENGINE $INFORM -in key0.tpm -pubout -out key0.pub || exit 1
     #openssl ecparam -name ${curve} > key1.param
     #openssl genpkey -paramfile key1.param -out key1.priv || exit 1
     openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:${curve} -pkeyopt ec_param_enc:named_curve -out key1.priv || exit 1
@@ -36,7 +36,7 @@ for curve in $(${bindir}/create_tpm2_key --list-curves); do
     # OK have two private and two public keys now generate two
     # derivations, one from key0.tpm and key1.pub and the other from
     # key1.priv and key0.pub.
-    openssl pkeyutl -derive -engine tpm2 -keyform engine -inkey key0.tpm -peerkey key1.pub -out derive.1 || exit 1
+    openssl pkeyutl -derive $ENGINE $KEYFORM -inkey key0.tpm -peerkey key1.pub -out derive.1 || exit 1
     openssl pkeyutl -derive -inkey key1.priv -peerkey key0.pub -out derive.2 || exit 1
     # if we got it right, both derivations should be the same
     cmp derive.1 derive.2 || exit 1

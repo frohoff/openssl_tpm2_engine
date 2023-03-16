@@ -23,25 +23,25 @@ fi
 ##
 # This is a real TPM key so the ASN.1 parses correctly
 ##
-echo "-----BEGIN TSS2 KEY BLOB-----
-MIICFwYFZ4EFCgKgAwEBAaEGAgSBAAABooIBHASCARgBFgABAAsAAgRgAAAAEAAQ
-CAAAAAAAAQDe92kKAADnax0VXfanY1VrsSAYyHudOVaFtkja8+JL3l4IMM4M19Wi
-0q42V/yeqY1FTEgd4gO8pYDtDdYrxNGe1Z7Hl5JuZigXRUqtqR6KCmTLYxW+mwkD
-iarJsZnYOawNtDDt4kQdV/saD9WbmX9NSsKA8/T256B7/AY9FWYtz8v41J/ZJfL1
-Cs6y5LAe/HiJc+dODFjZsPSS/CgGeiEguUh8g11BdnDocrgsXZGzIhZYP/t1lZA9
-AbfPAxf04Cj3NGd0kdLwCrNBbirMKXHuryPkBAKlvhseylFjZz39GjVh+wY745bc
-FVwEV382mn6fvR3G5qqkdxPEUzFzJCePBIHgAN4AINHqRAW9YlEmDtMrKevZNgKT
-N+FKyLR/dVBo0HT9BW6ZABD4tdfB5ZLkW5Seos7Ey8l0ov+yaOeBhARVovXR6tJG
-21VdUo0n2Eauc1ehaZ6dFAoU7rpgID3UtfBfgLLEoymS44Y8xqLgpWMQLg7pHMic
-JZ84jI3HuhPJTo4fDTeHf7aI/1uAfsPe0q0zzND5+cF2Maw6Wm6gsjAJsSoLD0MO
-2vJiwPzr1X9f9PGbhlkciOj/IJRHiu423I4ymvFEVgKMVZg4BEpQBrWIWyMceVRx
-QL4QAdW9Ac4kKt4=
------END TSS2 KEY BLOB-----" > tmp.tpm
+echo "-----BEGIN TSS2 PRIVATE KEY-----
+MIICEgYGZ4EFCgEDoAMBAQECBEAAAAEEggEYARYAAQALAAIEYAAAABAAEAgAAAAA
+AAEAmhZqBqBvWkQUQno1blrLz0PhzSiF1+Hs/9P57vm3IKt02XAsiXzfipso+uiq
+UxECUc1zESO6XI5Qeo/3a2XNJMpJ9e2U7vsD/9TaNoA4yXQ3pDVRbyTQsKYv4QG9
++jPwWnaz8cw8JLJ3rIjVbrb2VXl6u7OtgWNBXpsUlrHQRopiOsnk9NNV5C7dwrct
+/XOUr2sJBBAPKGBnb0KLO9IfyFBiet1Sn/eSIce5QrF4zPLnntqAJLHKRaVB95Lg
++MOQ1p5+ZiBun780FW7EHSbfgwunxU7FK5CkOb8GfO5b9fg+/MO6GoCh1F5psJTX
+mLEkGQF1c9Myts4Cc+Zbu1g8vwSB4ADeACDpW/gnAcRnH0qn2VZ7W3jpPJKrYDbv
+xxSr7wAuXopD6QAQ+gwemszEUlHXssutoiUbPcDwGZ7Iwb0wGNcK6CEKh9k1UECa
+giDcPZ8AMVK3XWlqCK5jXWgwXyX3n5gqafHjW878HH8tkMbTzLVjsszodG6JIBT5
+hWslwvPCknPRgkbo2GxXjaigVeameT/k1v3qn2hDSU/b70QcI1xeq0Uh5HeS5ok3
+heJUXsSYKGCfbbobhWVno/dAc4sOXd7BwwdclWYkDoQOpqUPWb4QqIbuYYb1Ha6K
+q1DxkJAF
+-----END TSS2 PRIVATE KEY-----" > tmp.tpm
 ##
 # conversion to public key doesn't actually contact the TPM
 # so this should succeed
 ##
-openssl pkey -engine tpm2 -inform engine -in tmp.tpm -pubout -out tmp.pub 2> tmp.txt
+openssl pkey $ENGINE $INFORM -in tmp.tpm -pubout -out tmp.pub 2> tmp.txt
 if [ $? -ne 0 ]; then
     echo "TPM key import failed with $?"
     cat tmp.txt
@@ -51,7 +51,7 @@ fi
 # key operation does contact the TPM and should fail
 ##
 echo "This is a message" |\
-openssl pkeyutl -sign -engine tpm2 -keyform engine -inkey tmp.tpm -out tmp.msg 2> tmp.txt
+openssl pkeyutl -sign $ENGINE $KEYFORM -inkey tmp.tpm -out tmp.msg 2> tmp.txt
 if [ $? -ne 1 ]; then
     echo "TPM key signing failed with $?"
     cat tmp.txt

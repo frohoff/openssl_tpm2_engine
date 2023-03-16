@@ -17,7 +17,7 @@ $bindir/create_tpm2_key -p 81000001 -rsa -a -k passw0rd key.tpm || exit 1
 mkdir testdir
 chmod u-w testdir || exit 1
 cd testdir || exit 1
-echo "This is a message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey ../key.tpm -passin pass:passw0rd -out ../tmp.msg
+echo "This is a message" | openssl rsautl -sign $ENGINE $KEYFORM -inkey ../key.tpm -passin pass:passw0rd -out ../tmp.msg
 cd ..
 
 ##
@@ -47,7 +47,7 @@ $bindir/create_tpm2_key -p 81000001 -rsa -a -k passw0rd key.tpm || exit 1
 rm -f fifo
 rm -f tmp.msg
 mkfifo fifo || exit 1
-cat fifo | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -passin pass:passw0rd -out tmp.msg &
+cat fifo | openssl rsautl -sign $ENGINE $KEYFORM -inkey key.tpm -passin pass:passw0rd -out tmp.msg &
 pid=$!
 while [ ! -f tmp.msg ] && [ -d /proc/$pid ]; do
     sleep 0.5

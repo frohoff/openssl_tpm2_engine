@@ -23,8 +23,8 @@ openssl genrsa 2048 > key1.priv || exit 1;
 for parent in "" "-p 81000001" "-p owner" "${TESTNULL}" "-p platform" "-p endorsement"; do
     echo "Handle: ${parent}"
     ${bindir}/create_tpm2_key ${parent} -w key1.priv key1.tpm || exit 1
-    openssl rsa -engine tpm2 -inform engine -in key1.tpm -pubout -out key1.pub || exit 1
-    echo "This is another message" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key1.tpm -out tmp.msg || exit 1
+    openssl rsa $ENGINE $INFORM -in key1.tpm -pubout -out key1.pub || exit 1
+    echo "This is another message" | openssl rsautl -sign $ENGINE $KEYFORM -inkey key1.tpm -out tmp.msg || exit 1
     openssl rsautl -verify -in tmp.msg -inkey key1.pub -pubin || exit 1
 done
 

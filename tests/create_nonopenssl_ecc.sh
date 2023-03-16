@@ -19,11 +19,11 @@ for curve in $(${bindir}/create_tpm2_key --list-curves); do
     echo "Checking curve ${curve}"
     ${bindir}/create_tpm2_key --ecc ${curve} key1.tpm || \
 	exit 1
-    openssl pkey -engine tpm2 -inform engine -in key1.tpm -pubout -out key1.pub || exit 1
+    openssl pkey $ENGINE $INFORM -in key1.tpm -pubout -out key1.pub || exit 1
     ${bindir}/create_tpm2_key --ecc ${curve} key2.tpm || \
 	exit 1
-    openssl pkey -engine tpm2 -inform engine -in key2.tpm -pubout -out key2.pub || exit 1
-    openssl pkeyutl -engine tpm2 -keyform engine -inkey key1.tpm -peerkey key2.pub -derive -out secret1.bin || exit 1
-    openssl pkeyutl -engine tpm2 -keyform engine -inkey key2.tpm -peerkey key1.pub -derive -out secret2.bin || exit 1
+    openssl pkey $ENGINE $INFORM -in key2.tpm -pubout -out key2.pub || exit 1
+    openssl pkeyutl $ENGINE $KEYFORM -inkey key1.tpm -peerkey key2.pub -derive -out secret1.bin || exit 1
+    openssl pkeyutl $ENGINE $KEYFORM -inkey key2.tpm -peerkey key1.pub -derive -out secret2.bin || exit 1
     diff -b secret1.bin secret2.bin || exit 1
 done

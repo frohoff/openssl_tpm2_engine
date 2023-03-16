@@ -33,8 +33,8 @@ ${bindir}/load_tpm2_key keyecc.tpm ${NV2} || exit 1
 ##
 for parent in ${NV2} ${NV}; do
     ${bindir}/create_tpm2_key -p ${parent} key.tpm || exit 1
-    openssl rsa -engine tpm2 -inform engine -in key.tpm -pubout -out key.pub || exit 1
-    echo "This is a test of moveable keys" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg || exit 1
+    openssl rsa $ENGINE $INFORM -in key.tpm -pubout -out key.pub || exit 1
+    echo "This is a test of moveable keys" | openssl rsautl -sign $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg || exit 1
     openssl rsautl -verify -in tmp.msg -inkey key.pub -pubin || exit 1
 done
 # on exit key 1 is parented to ${NV}
@@ -42,7 +42,7 @@ tssclear -hi p || exit 1
 ${bindir}/create_tpm2_key --restricted -w keyrsa.priv keyrsa.tpm || exit 1
 ${bindir}/load_tpm2_key keyrsa.tpm ${NV} || exit 1
 
-echo "This is a test of moveable keys" | openssl rsautl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg || exit 1
+echo "This is a test of moveable keys" | openssl rsautl -sign $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg || exit 1
 openssl rsautl -verify -in tmp.msg -inkey key.pub -pubin || exit 1
 
 ##
@@ -69,12 +69,12 @@ ${bindir}/load_tpm2_key --auth-parent Passw0rd key3.tpm ${NV2} || exit 1
 tssclear -hi p
 ${bindir}/create_tpm2_key --restricted -w keyecc.priv keyecc.tpm || exit 1
 ${bindir}/load_tpm2_key keyecc.tpm ${NV2} || exit 1
-openssl pkey -engine tpm2 -inform engine -in //nvkey:${NV2} -pubout -out keyecc.pub || exit 1
+openssl pkey $ENGINE $INFORM -in //nvkey:${NV2} -pubout -out keyecc.pub || exit 1
 openssl genrsa 2048 > key.priv || exit 1
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -pkeyopt ec_param_enc:named_curve -out key1.priv
 for key in key.priv key1.priv; do
     ${bindir}/create_tpm2_key --parent ${NV2} --import keyecc.pub --wrap ${key} key.tpm || exit 1
-    openssl req -new -x509 -subj '/CN=test/' -key key.tpm -engine tpm2 -keyform engine -out tmp.crt || exit 1
+    openssl req -new -x509 -subj '/CN=test/' -key key.tpm $ENGINE $KEYFORM -out tmp.crt || exit 1
     openssl verify -CAfile tmp.crt -check_ss_sig tmp.crt || exit 1
 done
 

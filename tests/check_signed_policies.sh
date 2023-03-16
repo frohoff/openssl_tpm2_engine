@@ -36,7 +36,7 @@ for alg in EC RSA; do
 	fi
 	openssl pkey -in policy.key -pubout -out policy.pub
 	${bindir}/create_tpm2_key ${n} --signed-policy policy.pub key.tpm || exit 1
-	openssl pkeyutl -sign -engine tpm2 -keyform engine -inkey key.tpm -in plain.txt -out tmp.msg && exit 1
+	openssl pkeyutl -sign $ENGINE $KEYFORM -inkey key.tpm -in plain.txt -out tmp.msg && exit 1
 	echo ${DATA} | ${bindir}/seal_tpm2_data --signed-policy policy.pub seal.tpm || exit 1
 	${bindir}/unseal_tpm2_data seal.tpm && exit 1
 
@@ -51,7 +51,7 @@ for alg in EC RSA; do
 	${tss_pcrreset_cmd} -ha 16
 	${bindir}/signed_tpm2_policy --policy-name "PCR16-0" --pcr-lock 16 key.tpm policy.key || exit 1
 	${bindir}/signed_tpm2_policy --policy-name "PCR16-0" --pcr-lock 16 seal.tpm policy.key || exit 1
-	openssl rsa -engine tpm2 -inform engine -in key.tpm -pubout -out key.pub || exit 1
+	openssl rsa $ENGINE $INFORM -in key.tpm -pubout -out key.pub || exit 1
 	${tss_pcrextend_cmd} -ha 16 -ic aaa
 	${bindir}/signed_tpm2_policy --policy-name "PCR16-extend" --pcr-lock 16 key.tpm policy.key || exit 1
 	${bindir}/signed_tpm2_policy --policy-name "PCR16-extend" --pcr-lock 16 seal.tpm policy.key || exit 1
@@ -62,23 +62,23 @@ for alg in EC RSA; do
 	${bindir}/signed_tpm2_policy --policy-name "PCR16-extendx3" --pcr-lock 16 key.tpm policy.key || exit 1
 	${bindir}/signed_tpm2_policy --policy-name "PCR16-extendx3" --pcr-lock 16 seal.tpm policy.key || exit 1
 	${tss_pcrreset_cmd} -ha 16
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && \
 	    openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
 	${bindir}/unseal_tpm2_data seal.tpm | grep -q "${DATA}" || exit 1
 	${tss_pcrextend_cmd} -ha 16 -ic aaa
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && \
 	    openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
 	${bindir}/unseal_tpm2_data seal.tpm | grep -q "${DATA}" || exit 1
 	${tss_pcrextend_cmd} -ha 16 -ic aaa
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && \
 	    openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
 	${bindir}/unseal_tpm2_data seal.tpm | grep -q "${DATA}" || exit 1
 	${tss_pcrextend_cmd} -ha 16 -ic aaa
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && \
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && \
 	    openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
 	${bindir}/unseal_tpm2_data seal.tpm | grep -q "${DATA}" || exit 1
 	${tss_pcrextend_cmd} -ha 16 -ic aaa
-	openssl pkeyutl -sign -in plain.txt -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && exit 1
+	openssl pkeyutl -sign -in plain.txt $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && exit 1
 	${bindir}/unseal_tpm2_data seal.tpm && exit 1
 
     done

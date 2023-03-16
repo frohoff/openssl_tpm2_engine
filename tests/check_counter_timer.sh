@@ -28,8 +28,8 @@ echo "00080009" >> policy.txt
 ##
 echo "policy counter timer" > plain.txt
 ${bindir}/create_tpm2_key key.tpm -a -k paSSW0RD -c policy.txt && \
-openssl rsa -engine tpm2 -inform engine -pubin -in key.tpm -pubout -out key.pub && \
-openssl pkeyutl -sign -in plain.txt -passin pass:paSSW0RD -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && \
+openssl rsa $ENGINE $INFORM -pubin -in key.tpm -pubout -out key.pub && \
+openssl pkeyutl -sign -in plain.txt -passin pass:paSSW0RD $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg && \
 openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key.pub -pubin || exit 1
 
 ##
@@ -44,7 +44,7 @@ tssclockset -hi o -clock ${clock} || exit 1
 # now the signing operation should fail
 ##
 echo "Check key failure due to counter timer policy"
-openssl pkeyutl -sign -in plain.txt -passin pass:paSSW0RD -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg 2> tmp.txt && exit 1
+openssl pkeyutl -sign -in plain.txt -passin pass:paSSW0RD $ENGINE $KEYFORM -inkey key.tpm -out tmp.msg 2> tmp.txt && exit 1
 # check we got the right failure message
 grep "Policy Failure: Counter Timer at offset 8 is not <=" tmp.txt
 

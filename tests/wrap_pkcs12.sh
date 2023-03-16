@@ -16,6 +16,6 @@ openssl pkcs12 -out tmp.p12 -passout pass: -export -inkey key.priv -in tmp.crt
 ${bindir}/create_tpm2_key -w tmp.p12 key.tpm || exit 1
 
 openssl req -new -newkey rsa:2048 -keyout key1.priv -subj '/CN=test intermediate/' -out tmp1.csr -nodes || exit 1
-openssl x509 -req -in tmp1.csr -CA tmp.crt -CAkey key.tpm -CAkeyform engine -engine tpm2 -set_serial 1 -out tmp1.crt -days 365 || exit 1
+openssl x509 -req -in tmp1.csr -CA tmp.crt -CAkey key.tpm $CAKEYFORM $ENGINE -set_serial 1 -out tmp1.crt -days 365 || exit 1
 
 openssl verify -CAfile tmp.crt tmp1.crt || exit 1

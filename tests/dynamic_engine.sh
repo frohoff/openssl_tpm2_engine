@@ -9,10 +9,10 @@ export OPENSSL_ENGINES=${testdir}/../src/engine/.libs
 ln -s libtpm2.so ${OPENSSL_ENGINES}/tpm2.so
 
 testkey() {
-    openssl pkey -engine tpm2 -inform engine -in key.tpm -pubout -out key.pub || exit 1
+    openssl pkey $ENGINE $INFORM -in key.tpm -pubout -out key.pub || exit 1
     # must be 32 bytes exactly for ECDSA signatures
     echo -n "12345678901234567890123456789012" > tmp.plain
-    openssl pkeyutl -sign -engine tpm2 -keyform engine -in tmp.plain -inkey key.tpm -out tmp.msg || exit 1
+    openssl pkeyutl -sign $ENGINE $KEYFORM -in tmp.plain -inkey key.tpm -out tmp.msg || exit 1
     openssl pkeyutl -verify -in tmp.plain -sigfile tmp.msg -inkey key.pub -pubin || exit 1
 }
 
