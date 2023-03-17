@@ -1148,7 +1148,7 @@ static TPM_RC tpm2_try_policy(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 {
 	INT32 size;
 	BYTE *policy;
-	TPM_RC rc, reason_rc = 0;
+	TPM_RC rc = TPM_RC_SUCCESS, reason_rc = 0;
 	int i;
 	char reason[256];
 	int name_alg_size = TSS_GetDigestSize(name_alg);
