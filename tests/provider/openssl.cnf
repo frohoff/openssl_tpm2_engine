@@ -1,0 +1,22 @@
+HOME		= .
+RANDFILE	= $ENV::HOME/.rnd
+openssl_conf	= openssl_init
+SRKPIN		=
+NVPREFIX	= //nvkey:
+
+[req]
+distinguished_name = req_distinguished_name
+
+[req_distinguished_name]
+commonName	= Common Name
+commonName_max	= 64
+
+[openssl_init]
+providers	= providers_section
+
+[providers_section]
+libtpm2		= libtpm2_section
+
+[libtpm2_section]
+PIN		= $ENV::SRKPIN
+NVPREFIX	= $ENV::NVPREFIX

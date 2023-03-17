@@ -7,3 +7,4 @@ SUBDIRS += src/tools
 SUBDIRS += src/opensslmissing
 SUBDIRS += src/provider
 SUBDIRS += tests/engine
+SUBDIRS += tests/provider

@@ -167,6 +167,7 @@ AC_SUBST(testtpm)
 
 AC_OUTPUT([Makefile
 	   tests/engine/Makefile
+	   tests/provider/Makefile
 	   doc/Makefile
 	   src/libcommon/Makefile
 	   src/opensslmissing/Makefile
