@@ -23,7 +23,7 @@ An alternate method (rfc include) is described in the references.
         <email>James.Bottomley@HansenPartnership.com</email>
       </address>
     </author>
-    <date month="December" year="2022"/>
+    <date month="March" year="2023"/>
     <area>Security</area>
     <keyword>I-D</keyword>
     <keyword>Internet-Draft</keyword>
@@ -129,7 +129,7 @@ An alternate method (rfc include) is described in the references.
 	  </t>
 	  <figure><artwork>
   id-tpmkey OBJECT IDENTIFIER ::=
-    {joint-iso-itu-t(2) international-organizations(23) 133 10}
+    {joint-iso-itu-t(2) international-organizations(23) 133 10 1}
 	  </artwork></figure>
 	  <t>
 	    And the three key types are:
