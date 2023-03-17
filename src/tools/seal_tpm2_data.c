@@ -357,6 +357,16 @@ int main(int argc, char **argv)
 	if (import) {
 		TPMT_SENSITIVE ts;
 		EVP_PKEY *p_pkey = openssl_read_public_key(import);
+		if (parent_str) {
+			parent = tpm2_get_parent_ext(parent_str);
+			if (!parent) {
+				fprintf(stderr, "Unknown parent '%s'\n",
+					parent_str);
+				goto out_flush;
+			}
+		} else {
+			parent = EXT_TPM_RH_OWNER;
+		}
 
 		wrap_data(&ts, data_auth, VAL_2B(s->data, buffer),
 			  VAL_2B(s->data, size));
