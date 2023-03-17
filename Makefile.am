@@ -1,3 +1,7 @@
 EXTRA_DIST = README openssl.cnf.sample
 
-SUBDIRS = tests doc src/libcommon src/engine src/tools
+SUBDIRS =  doc
+SUBDIRS += src/libcommon
+SUBDIRS += src/engine
+SUBDIRS += src/tools
+SUBDIRS += tests/engine

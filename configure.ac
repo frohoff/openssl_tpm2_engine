@@ -160,7 +160,7 @@ fi
 AC_SUBST(testtpm)
 
 AC_OUTPUT([Makefile
-	   tests/Makefile
+	   tests/engine/Makefile
 	   doc/Makefile
 	   src/libcommon/Makefile
 	   src/engine/Makefile

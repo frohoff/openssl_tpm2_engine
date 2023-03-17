@@ -51,7 +51,7 @@ openssl rsautl -verify -in tmp.msg -inkey key.pub -pubin || exit 1
 # 2. check the use of parent auth to load the NV area
 ##
 tssclear -hi p
-${bindir}/create_tpm2_key --restricted -c policies/policy_pcr.txt key2.tpm || exit 1
+${bindir}/create_tpm2_key --restricted -c ${testdir}/policies/policy_pcr.txt key2.tpm || exit 1
 ${bindir}/load_tpm2_key key2.tpm ${NV} && exit 1
 ${bindir}/load_tpm2_key --force key2.tpm ${NV} || exit 1
 

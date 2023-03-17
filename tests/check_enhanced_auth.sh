@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -x
 
 tss_pcrreset_cmd=tsspcrreset
 tss_pcrextend_cmd=tsspcrextend
@@ -15,7 +15,7 @@ fi
 # check we can use a bogus policy 5 times without clogging up the TPM, so
 # we're properly flushing policy handles
 ##
-${bindir}/create_tpm2_key key.tpm -c policies/policy_bogus.txt
+${bindir}/create_tpm2_key key.tpm -c ${testdir}/policies/policy_bogus.txt
 a=0; while [ $a -lt 5 ]; do
     a=$[$a+1]
     echo "This is a message" | openssl pkeyutl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key.tpm -out tmp.msg && exit 1
@@ -50,7 +50,7 @@ for h in "sha1" "" "sha384"; do
     # 3. encode a message using the TPM key
     # 4. verify the message through the public key
     echo "This is a Message" > plain.txt
-    ${bindir}/create_tpm2_key ${n} -a -k passw0rd key2.tpm -c policies/policy_authvalue.txt && \
+    ${bindir}/create_tpm2_key ${n} -a -k passw0rd key2.tpm -c ${testdir}/policies/policy_authvalue.txt && \
     openssl rsa -engine tpm2 -inform engine -passin pass:passw0rd -in key2.tpm -pubout -out key2.pub && \
     openssl pkeyutl -sign -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -passin pass:passw0rd -in plain.txt -out tmp.msg && \
     openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin || exit 1
@@ -65,7 +65,7 @@ for h in "sha1" "" "sha384"; do
     # 6. verify the message through the public key
     ${tss_pcrreset_cmd} -ha 16
     ${tss_pcrextend_cmd} -ha 16 -ic aaa
-    ${bindir}/create_tpm2_key ${n} key2.tpm -c policies/policy_pcr${h}.txt && \
+    ${bindir}/create_tpm2_key ${n} key2.tpm -c ${testdir}/policies/policy_pcr${h}.txt && \
 	openssl rsa -engine tpm2 -inform engine -in key2.tpm -pubout -out key2.pub && \
 	openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -out tmp.msg && \
 	openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin || exit 1
@@ -78,7 +78,7 @@ for h in "sha1" "" "sha384"; do
     # 4. encode a message using the TPM key
     # 5. verify the message through the public key
     ${tss_pcrreset_cmd} -ha 16
-    ${bindir}/create_tpm2_key ${n} key2.tpm -c policies/policy_pcr${h}.txt
+    ${bindir}/create_tpm2_key ${n} key2.tpm -c ${testdir}/policies/policy_pcr${h}.txt
     openssl rsa -engine tpm2 -inform engine -in key2.tpm -pubout -out key2.pub && \
 	openssl pkeyutl -sign -in plain.txt -engine tpm2 -engine tpm2 -keyform engine -inkey key2.tpm -out tmp.msg && \
 	openssl pkeyutl -verify -in plain.txt -sigfile tmp.msg -inkey key2.pub -pubin
@@ -95,7 +95,7 @@ for h in "sha1" "" "sha384"; do
     # 4. get the corresponding public key from the engine
     # 5. encode a message using the TPM key
     # 6. verify the message through the public key
-    cat policies/policy_authvalue.txt policies/policy_pcr${h}.txt > policy_authvalue_pcr.txt
+    cat ${testdir}/policies/policy_authvalue.txt ${testdir}/policies/policy_pcr${h}.txt > policy_authvalue_pcr.txt
     ${tss_pcrreset_cmd} -ha 16
     ${tss_pcrextend_cmd} -ha 16 -ic aaa
     ${bindir}/create_tpm2_key ${n} -a -k passw0rd key2.tpm -c policy_authvalue_pcr.txt && \
@@ -111,7 +111,7 @@ for h in "sha1" "" "sha384"; do
     # 4. get the corresponding public key from the engine
     # 5. encode a message using the TPM key
     # 6. verify the message through the public key
-    cat policies/policy_pcr${h}.txt policies/policy_authvalue.txt > policy_pcr_authvalue.txt
+    cat ${testdir}/policies/policy_pcr${h}.txt ${testdir}/policies/policy_authvalue.txt > policy_pcr_authvalue.txt
     ${tss_pcrreset_cmd} -ha 16
     ${tss_pcrextend_cmd} -ha 16 -ic aaa
     ${bindir}/create_tpm2_key ${n} -a -k passw0rd key2.tpm -c policy_pcr_authvalue.txt && \

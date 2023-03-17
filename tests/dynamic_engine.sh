@@ -5,7 +5,7 @@ set -x
 # to work with the dynamic engine, we unset the openssl.cnf that
 # specifies a built in engine
 unset OPENSSL_CONF
-export OPENSSL_ENGINES=${srcdir}/../src/engine/.libs
+export OPENSSL_ENGINES=${testdir}/../src/engine/.libs
 ln -s libtpm2.so ${OPENSSL_ENGINES}/tpm2.so
 
 testkey() {

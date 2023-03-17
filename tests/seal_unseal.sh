@@ -44,9 +44,9 @@ for n in sha1 sha256 sha384; do
     # 6. update PCR and check unseal failure
     DATA="Some Different DATA $n"
     if [ "$n" = "sha256" ]; then
-	POLICYFILE="policies/policy_pcr.txt"
+	POLICYFILE="${testdir}/policies/policy_pcr.txt"
     else
-	POLICYFILE="policies/policy_pcr${n}.txt"
+	POLICYFILE="${testdir}/policies/policy_pcr${n}.txt"
     fi
     prim=$(tsscreateprimary -hi o -st -ecc nistp256 -opem srk.pub | sed 's/Handle //') || exit 1
     tssflushcontext -ha $prim

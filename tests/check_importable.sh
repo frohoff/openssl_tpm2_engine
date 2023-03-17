@@ -8,9 +8,9 @@ tssflushcontext -ha ${prim} || exit 1
 for n in sha1 sha256 sha384; do
     echo "Checking Name Hash $n"
     if [ "$n" = "sha256" ]; then
-	POLICYFILE=policies/policy_pcr.txt
+	POLICYFILE=${testdir}/policies/policy_pcr.txt
     else
-	POLICYFILE=policies/policy_pcr${n}.txt
+	POLICYFILE=${testdir}/policies/policy_pcr${n}.txt
     fi
     # check an EC key with a cert and password
     openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:prime256v1 -out key.priv || exit 1
