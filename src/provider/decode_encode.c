@@ -100,6 +100,25 @@ static int tpm2_pkey_decode(void *ctx, OSSL_CORE_BIO *cin, int selection,
 	params[2] = OSSL_PARAM_construct_octet_string(OSSL_OBJECT_PARAM_REFERENCE,
 						      &ad, sizeof(ad));
 	params[3] = OSSL_PARAM_construct_end();
+	if (alg == TPM_ALG_ECC) {
+		/*
+		 * NASTY HACK for provider recursion problem.  If the
+		 * provider depends on openssl, like this one does
+		 * (tss uses it) then you always get a problem with
+		 * the key management methods for this provider being
+		 * found first in the cache because the order of
+		 * searching is cache first then providers by order.
+		 * The specific problem is that the lower tss routines
+		 * need to use EC derivation to create the
+		 * encryption/HMAC salt, but they can't use this
+		 * provider to do it (otherwise they'd recurse
+		 * forvever), so you need to populate the cache with
+		 * the default implementation of EC keys so they are
+		 * found before this provider's ones.
+		 */
+		EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
+		EVP_PKEY_CTX_free(ctx);
+	}
 
         ret = data_cb(params, data_cbarg);
 	if (ret)
