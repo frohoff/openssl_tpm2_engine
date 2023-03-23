@@ -11,6 +11,8 @@
 #include <tss2/tss2_tcti.h>
 #include <tss2/tss2_tctildr.h>
 
+#include <string.h>
+
 #include <openssl/aes.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
@@ -209,7 +211,7 @@ TSS_CONVERT_UNMARSHAL(TPMT_SIGNATURE, X)
 
 static const struct {
 	TPM_ALG_ID alg;
-	const char *name;
+	char *name;
 	int size;
 } TSS_Hashes[] = {
 	{ TPM_ALG_SHA1,   "sha1",   SHA_DIGEST_LENGTH },
@@ -301,6 +303,16 @@ TSS_GetDigestSize(TPM_ALG_ID alg) {
 	return -1;
 }
 
+static inline char *
+TSS_GetDigestName(TPM_ALG_ID alg) {
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(TSS_Hashes); i++)
+		if (TSS_Hashes[i].alg == alg)
+			return TSS_Hashes[i].name;
+	return NULL;
+}
+
 static inline int
 TSS_Hash_GetMd(const EVP_MD **md, TPM_ALG_ID alg) {
 	int i;
@@ -381,8 +393,16 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 	const EVP_MD *md;	/* message digest method */
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	HMAC_CTX ctx;
-#else
+#elsif OPENSSL_VERSION < 0x30000000
 	HMAC_CTX *ctx;
+#else
+	EVP_MAC *mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
+	EVP_MAC_CTX *ctx;
+	OSSL_PARAM params[] = {
+		OSSL_PARAM_construct_utf8_string("digest", TSS_GetDigestName(digest->hashAlg), 0),
+		OSSL_PARAM_construct_end()
+	};
+	fprintf(stderr, "HMAC\n");
 #endif
 	int length;
 	uint8_t *buffer;
@@ -392,8 +412,10 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	HMAC_CTX_init(&ctx);
-#else
+#elsif OPENSSL_VERSION < 0x30000000
 	ctx = HMAC_CTX_new();
+#else
+	ctx = EVP_MAC_CTX_new(mac);
 #endif
 	rc = TSS_Hash_GetMd(&md, digest->hashAlg);
 	if (rc)
@@ -404,11 +426,13 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 			  hmacKey->buffer, hmacKey->size,	/* HMAC key */
 			  md,					/* message digest method */
 			  NULL);
-#else
+#elsif OPENSSL_VERSION < 0x30000000
 	rc = HMAC_Init_ex(ctx,
 			  hmacKey->buffer, hmacKey->size,	/* HMAC key */
 			  md,					/* message digest method */
 			  NULL);
+#else
+	rc = EVP_MAC_init(ctx, hmacKey->buffer, hmacKey->size, params);
 #endif
 
 	if (rc == 0) {
@@ -428,8 +452,10 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 		}
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 		rc = HMAC_Update(&ctx, buffer, length);
-#else
+#elsif OPENSSL_VERSION < 0x30000000
 		rc = HMAC_Update(ctx, buffer, length);
+#else
+		rc = EVP_MAC_update(ctx, buffer, length);
 #endif
 		if (rc == 0) {
 			fprintf(stderr, "TSS_HMAC_Generate: HMAC_Update failed\n");
@@ -440,8 +466,10 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	rc = HMAC_Final(&ctx, (uint8_t *)&digest->digest, NULL);
-#else
+#elsif OPENSSL_VERSION < 0x30000000
 	rc = HMAC_Final(ctx, (uint8_t *)&digest->digest, NULL);
+#else
+	rc = EVP_MAC_final(ctx, (uint8_t *)&digest->digest, NULL, TSS_GetDigestSize(digest->hashAlg));
 #endif
 	if (rc == 0)
 		rc = TPM_RC_FAILURE;
@@ -451,8 +479,11 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
  out_free:
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	HMAC_CTX_cleanup(&ctx);
-#else
+#elsif OPENSSL_VERSION < 0x30000000
 	HMAC_CTX_free(ctx);
+#else
+	EVP_MAC_CTX_free(ctx);
+	EVP_MAC_free(mac);
 #endif
  out:
 	va_end(ap);
@@ -477,6 +508,7 @@ static inline TPM_RC
 TSS_AES_EncryptCFB(uint8_t *dOut, uint32_t keySizeInBits, uint8_t *key,
 		   uint8_t *iv,uint32_t dInSize, uint8_t *dIn)
 {
+#if OPENSSL_VERSION_NUMBER < 0x30000000
 	TPM_RC rc = 0;
 	int blockSize;
 	AES_KEY aeskey;
@@ -500,6 +532,30 @@ TSS_AES_EncryptCFB(uint8_t *dOut, uint32_t keySizeInBits, uint8_t *key,
 	}
 
 	return TPM_RC_SUCCESS;
+#else
+	int rc;
+	int outsize, tmpsize;
+	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+
+	rc = EVP_EncryptInit_ex(ctx, EVP_aes_128_cfb(), NULL, key, iv);
+	if (!rc) {
+		fprintf(stderr, "EncryptInit failed\n");
+		return TPM_RC_FAILURE;
+	}
+	rc = EVP_EncryptUpdate(ctx, dOut, &outsize, dIn, dInSize);
+	if (!rc) {
+		fprintf(stderr, "EncryptUpdate failed\n");
+		return TPM_RC_FAILURE;
+	}
+	rc = EVP_EncryptFinal(ctx, dOut + outsize, &tmpsize);
+	if (!rc) {
+		fprintf(stderr, "EncryptFinal failed\n");
+		return TPM_RC_FAILURE;
+	}
+	EVP_CIPHER_CTX_free(ctx);
+
+	return TPM_RC_SUCCESS;
+#endif
 }
 
 static inline TPM_RC
