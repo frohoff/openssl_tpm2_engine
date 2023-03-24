@@ -54,7 +54,7 @@ struct app_data {
 
 void tpm2_error(TPM_RC rc, const char *reason);
 TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
-		     TPM2B_PUBLIC *pub, TPM_HANDLE handle, int version);
+		     TPM2B_PUBLIC *pub, TPM_HANDLE handle, enum tpm2_type type);
 void tpm2_flush_handle(TSS_CONTEXT *tssContext, TPM_HANDLE h);
 EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub);
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK);

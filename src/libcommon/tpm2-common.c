@@ -1991,7 +1991,8 @@ int tpm2_load_bf(BIO *bf, struct app_data *app_data, const char *srk_auth)
 		parentHandle = tpm2_handle_int(tssContext, app_data->parent);
 		if (tpm2_handle_mso(tssContext, parentHandle, TPM_HT_PERMANENT)) {
 			tpm2_load_srk(tssContext, &parentHandle,
-				      srk_auth, NULL, parentHandle, 1);
+				      srk_auth, NULL, parentHandle,
+				      TPM2_LOADABLE);
 		}
 
 		rc = tpm2_get_session_handle(tssContext, &session,
