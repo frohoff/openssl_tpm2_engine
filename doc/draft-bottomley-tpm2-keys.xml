@@ -192,7 +192,7 @@ An alternate method (rfc include) is described in the references.
 	    This SHOULD be present if the TPMkey policy contains a
 	    TPM2_PolicyAuthorize statement because it contains signed
 	    policies that could be used to satisfy the TPM key policy.
-	    The forms of the auth{olicy statement are described in
+	    The forms of the authPolicy statement are described in
 	    <xref target="signed-policy"/>.  If the TPM key
 	    has no policy hash then this MUST NOT be present.
 	  </t>
