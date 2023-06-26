@@ -378,7 +378,7 @@ static void list_curves(void)
 		if (name)
 			printf("%s\n", name);
 		else
-			printf("Curve %d Unsupported\n", c->eccCurves[i]);
+			fprintf(stderr, "Curve %d Unsupported\n", c->eccCurves[i]);
 	}
 
 	return;
