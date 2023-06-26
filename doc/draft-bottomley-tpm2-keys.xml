@@ -23,7 +23,7 @@ An alternate method (rfc include) is described in the references.
         <email>James.Bottomley@HansenPartnership.com</email>
       </address>
     </author>
-    <date month="March" year="2023"/>
+    <date month="June" year="2023"/>
     <area>Security</area>
     <keyword>I-D</keyword>
     <keyword>Internet-Draft</keyword>
@@ -210,9 +210,11 @@ An alternate method (rfc include) is described in the references.
 	  <t>
 	     If a permanent handle (MSO 0x40) is specified then the
 	     implementation MUST run TPM2_CreatePrimary on the handle
-	     using the TCG specified Elliptic Curve template for the
-	     NIST P-256 curve and use the primary key so generated as
-	     the parent.
+	     using the TCG specified Elliptic Curve template <xref
+	     target="TCG-Provision"/> (section 7.5.1 for the Storage
+	     and other seeds or 7.4.1 for the endorsement seed) for
+	     the NIST P-256 curve and use the primary key so generated
+	     as the parent.
 	  </t>
 	</section>
 	<section title="pubkey">
@@ -648,6 +650,15 @@ An alternate method (rfc include) is described in the references.
           (ASN.1):  Specification of basic notation.</title>
 	  <author><organization>International Telecommunication Union</organization></author>
 	  <date year="2015" month="August"/>
+	</front>
+      </reference>
+      <reference anchor="TCG-Provision" target="https://trustedcomputinggroup.org/resource/tcg-tpm-v2-0-provisioning-guidance/">
+	<front>
+	  <title>TCG TPM v2.0 Provisioning Guidance</title>
+	  <author>
+	    <organization>Trusted Computing Group</organization>
+	  </author>
+	  <date year="2017" month="March" day="15"/>
 	</front>
       </reference>
     </references>
