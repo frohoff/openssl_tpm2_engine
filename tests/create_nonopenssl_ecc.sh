@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# swtpm doesn't have a correct implementation of the Barreto-Naehrig curves
+# which are the only openssl unparametrised ones, so skip the test
+if [ -x "${SWTPM}" ]; then
+    exit 77;
+fi
 
 ##
 # test is
