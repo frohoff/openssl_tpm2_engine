@@ -101,18 +101,18 @@ An alternate method (rfc include) is described in the references.
 	specifications, which is why the TPMkey is not versioned.
       </t>
       <section anchor="tpmkey" title="TPMkey Syntax">
-	<figure><artwork>
+	<sourcecode type="asn.1">
  TPMKey ::= SEQUENCE {
-    type        OBJECT IDENTIFIER
-    emptyAuth   [0] EXPLICIT BOOLEAN OPTIONAL
-    policy      [1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL
-    secret      [2] EXPLICIT OCTET STRING OPTIONAL
-    authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL
-    parent      INTEGER
-    pubkey      OCTET STRING
+    type        OBJECT IDENTIFIER,
+    emptyAuth   [0] EXPLICIT BOOLEAN OPTIONAL,
+    policy      [1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL,
+    secret      [2] EXPLICIT OCTET STRING OPTIONAL,
+    authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL,
+    parent      INTEGER,
+    pubkey      OCTET STRING,
     privkey     OCTET STRING
   }
-	</artwork></figure>
+	</sourcecode>
 	<t>
 	  The fields of type TPMKey have the following meanings:
 	</t>
@@ -127,25 +127,25 @@ An alternate method (rfc include) is described in the references.
 	    extracted with TPM2_Unseal).  The TCG has reserved the
 	    following OID prefix for this:
 	  </t>
-	  <figure><artwork>
+	  <sourcecode type="asn.1">
   id-tpmkey OBJECT IDENTIFIER ::=
     {joint-iso-itu-t(2) international-organizations(23) 133 10 1}
-	  </artwork></figure>
+	  </sourcecode>
 	  <t>
 	    And the three key types are:
 	  </t>
-	  <figure><artwork>
+	  <sourcecode type="asn.1">
   id-loadablekey OBJECT IDENTIFIER ::=
     {id-tpmkey 3}
-	  </artwork></figure>
-	  <figure><artwork>
+	  </sourcecode>
+	  <sourcecode type="asn.1">
   id-importablekey OBJECT IDENTIFIER ::=
     {id-tpmkey 4}
-	  </artwork></figure>
-	  <figure><artwork>
+	  </sourcecode>
+	  <sourcecode type="asn.1">
   id-sealedkey OBJECT IDENTIFIER ::=
     {id-tpmkey 5}
-	  </artwork></figure>
+	  </sourcecode>
 	</section>
 	<section title="emptyAuth">
 	  <t>
@@ -257,12 +257,12 @@ An alternate method (rfc include) is described in the references.
 	supported by this standard (such as TPM2_PolicyAuthorize).
       </t>
       <section anchor="TPMPolicy" title="TPMPolicy Syntax">
-	<figure><artwork>
+	<sourcecode type="asn.1">
  TPMPolicy ::= SEQUENCE {
-    CommandCode   [0] EXPLICIT INTEGER
-    CommandPolicy [1] EXPLICIT OCTET STRING
+    commandCode   [0] EXPLICIT INTEGER,
+    commandPolicy [1] EXPLICIT OCTET STRING
   }
-	</artwork></figure>
+	</sourcecode>
 	<t>
 	  The Fields of type TPMPolicy have the following meanings:
 	</t>
@@ -394,12 +394,12 @@ An alternate method (rfc include) is described in the references.
 	policies.
       </t>
       <section title="TPMAuthPolicy Syntax">
-	<figure><artwork>
+	<sourcecode type="asn.1">
  TPMAuthPolicy ::= SEQUENCE {
-    Name    [0] EXPLICIT UTF8STRING OPTIONAL
-    Policy  [1] EXPLICIT SEQUENCE OF TPMPolicy
+    name    [0] EXPLICIT UTF8String OPTIONAL,
+    policy  [1] EXPLICIT SEQUENCE OF TPMPolicy
  }
-        </artwork></figure>
+        </sourcecode>
 	<t>
 	  The Fields of type TPMAuthPolicy have the following meanings:
 	</t>
@@ -628,7 +628,6 @@ An alternate method (rfc include) is described in the references.
 	implementation.
       </t>
     </section>
-
   </middle>
   <back>
     <references title="Normative References">
@@ -680,5 +679,55 @@ An alternate method (rfc include) is described in the references.
 	</front>
       </reference>
     </references>
+    <section anchor="asn1-module" title="ASN.1 Module">
+      <sourcecode type="asn.1">
+ TPM-Key-Module
+
+ DEFINITIONS IMPLICIT TAGS ::=
+ BEGIN
+
+ --
+ -- Should import this but TCG hasn't yet published it or .10
+ --
+ id-tpmkey OBJECT IDENTIFIER ::=
+   {joint-iso-itu-t(2) international-organizations(23) 133 10 1}
+
+ --
+ -- OIDs defined by this RFC
+ --
+ id-loadablekey OBJECT IDENTIFIER ::=  {id-tpmkey 3}
+ id-importablekey OBJECT IDENTIFIER ::=  {id-tpmkey 4}
+ id-sealedkey OBJECT IDENTIFIER ::= {id-tpmkey 5}
+
+ TPMPolicy ::= SEQUENCE {
+   commandCode   [0] EXPLICIT INTEGER,
+   commandPolicy [1] EXPLICIT OCTET STRING
+ }
+
+ TPMAuthPolicy ::= SEQUENCE {
+   name    [0] EXPLICIT UTF8String OPTIONAL,
+   policy  [1] EXPLICIT SEQUENCE OF TPMPolicy
+ }
+
+ TPMKeyType ::= OBJECT IDENTIFIER (
+   id-loadablekey |
+   id-importablekey |
+   id-sealedkey
+ )
+
+ TPMKey ::= SEQUENCE {
+   type        TPMKeyType,
+   emptyAuth   [0] EXPLICIT BOOLEAN OPTIONAL,
+   policy      [1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL,
+   secret      [2] EXPLICIT OCTET STRING OPTIONAL,
+   authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL,
+   parent      INTEGER,
+   pubkey      OCTET STRING,
+   privkey     OCTET STRING
+ }
+
+ END
+      </sourcecode>
+    </section>
   </back>
 </rfc>
