@@ -2175,7 +2175,8 @@ int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 	}
 	if (version == 0) {
 		k.tssl.type = OBJ_txt2obj(OID_OldloadableKey, 1);
-		k.tssl.emptyAuth = empty_auth;
+		/* standard requires true or not present */
+		k.tssl.emptyAuth = empty_auth ? 0xff : -1;
 		k.tssl.parent = ASN1_INTEGER_new();
 		ASN1_INTEGER_set(k.tssl.parent, parent);
 
@@ -2201,7 +2202,8 @@ int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 					secret->size);
 		}
 
-		k.tpk.emptyAuth = empty_auth;
+		/* standard requires true or not present */
+		k.tpk.emptyAuth = empty_auth ? 0xff : -1;
 		k.tpk.parent = ASN1_INTEGER_new();
 		ASN1_INTEGER_set(k.tpk.parent, parent);
 
