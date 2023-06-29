@@ -398,7 +398,7 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 	const EVP_MD *md;	/* message digest method */
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	HMAC_CTX ctx;
-#elif OPENSSL_VERSION < 0x30000000
+#elif OPENSSL_VERSION_NUMBER < 0x30000000
 	HMAC_CTX *ctx;
 #else
 	EVP_MAC *mac = EVP_MAC_fetch(NULL, "HMAC", NULL);
@@ -417,7 +417,7 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	HMAC_CTX_init(&ctx);
-#elif OPENSSL_VERSION < 0x30000000
+#elif OPENSSL_VERSION_NUMBER < 0x30000000
 	ctx = HMAC_CTX_new();
 #else
 	ctx = EVP_MAC_CTX_new(mac);
@@ -431,7 +431,7 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 			  hmacKey->buffer, hmacKey->size,	/* HMAC key */
 			  md,					/* message digest method */
 			  NULL);
-#elif OPENSSL_VERSION < 0x30000000
+#elif OPENSSL_VERSION_NUMBER < 0x30000000
 	rc = HMAC_Init_ex(ctx,
 			  hmacKey->buffer, hmacKey->size,	/* HMAC key */
 			  md,					/* message digest method */
@@ -457,7 +457,7 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 		}
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 		rc = HMAC_Update(&ctx, buffer, length);
-#elif OPENSSL_VERSION < 0x30000000
+#elif OPENSSL_VERSION_NUMBER < 0x30000000
 		rc = HMAC_Update(ctx, buffer, length);
 #else
 		rc = EVP_MAC_update(ctx, buffer, length);
@@ -471,7 +471,7 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	rc = HMAC_Final(&ctx, (uint8_t *)&digest->digest, NULL);
-#elif OPENSSL_VERSION < 0x30000000
+#elif OPENSSL_VERSION_NUMBER < 0x30000000
 	rc = HMAC_Final(ctx, (uint8_t *)&digest->digest, NULL);
 #else
 	rc = EVP_MAC_final(ctx, (uint8_t *)&digest->digest, NULL, TSS_GetDigestSize(digest->hashAlg));
@@ -484,7 +484,7 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
  out_free:
 #if OPENSSL_VERSION_NUMBER < 0x10100000
 	HMAC_CTX_cleanup(&ctx);
-#elif OPENSSL_VERSION < 0x30000000
+#elif OPENSSL_VERSION_NUMBER < 0x30000000
 	HMAC_CTX_free(ctx);
 #else
 	EVP_MAC_CTX_free(ctx);
