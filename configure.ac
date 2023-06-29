@@ -154,11 +154,11 @@ AC_SUBST(SHREXT)
 TSSTYPE=$tsslibs
 AC_SUBST(TSSTYPE)
 
-if test -x "${SWTPM}" -a -x "${SWTPM_IOCTL}"; then
+if test -x "${TPMSERVER}"; then
+   testtpm=tpm_server
+elif test -x "${SWTPM}" -a -x "${SWTPM_IOCTL}"; then
    testtpm=swtpm
    unset TPMSERVER
-elif test -x "${TPMSERVER}"; then
-   testtpm=tpm_server
 else
     testtpm=
 fi
