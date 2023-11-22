@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 	char *filename;
 	TPM_RC rc;
 	TSS_CONTEXT *tssContext;
-	const char *reason;
+	const char *reason = NULL;
 	TPM_HANDLE itemHandle;
 	SENSITIVE_DATA_2B outData;
 	uint32_t parent, session;
