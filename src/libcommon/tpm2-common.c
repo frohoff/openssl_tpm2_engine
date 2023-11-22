@@ -2349,6 +2349,89 @@ out:
 	return rc;
 }
 
+static void tpm2_read_tpk(char *tpmkey, TSSPRIVKEY **tpk)
+{
+	BIO *bf;
+	*tpk = NULL;
+
+	bf = BIO_new_file(tpmkey, "r");
+	if (!bf) {
+		fprintf(stderr, "File %s does not exist or cannot be read\n",
+			tpmkey);
+		return;
+	}
+
+	*tpk = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
+	if (!*tpk) {
+		BIO_seek(bf, 0);
+		ERR_clear_error();
+		*tpk = ASN1_item_d2i_bio(ASN1_ITEM_rptr(TSSPRIVKEY), bf, NULL);
+	}
+	BIO_free(bf);
+	if (!*tpk)
+		fprintf(stderr, "Cannot parse file as TPM key\n");
+}
+
+static int tpm2_write_tpk(char *tpmkey, TSSPRIVKEY *tpk)
+{
+	BIO *bf;
+
+	bf = BIO_new_file(tpmkey, "w");
+	if (bf == NULL) {
+		fprintf(stderr, "Failed to open key file %s for writing\n",
+			tpmkey);
+		return 1;
+	}
+	PEM_write_bio_TSSPRIVKEY(bf, tpk);
+	BIO_free(bf);
+
+	return 0;
+}
+
+int tpm2_rm_signed_policy(char *tpmkey, int rmnum)
+{
+	TSSPRIVKEY *tpk;
+	TSSAUTHPOLICY *ap;
+	int ret = 0;
+
+	tpm2_read_tpk(tpmkey, &tpk);
+	if (!tpk)
+		return 1;
+
+	if (sk_TSSAUTHPOLICY_num(tpk->authPolicy) < rmnum) {
+		fprintf(stderr, "Policy %d does not exist\n", rmnum);
+		goto out_free;
+	}
+
+	ap = sk_TSSAUTHPOLICY_delete(tpk->authPolicy, rmnum - 1);
+	TSSAUTHPOLICY_free(ap);
+
+	ret = tpm2_write_tpk(tpmkey, tpk);
+
+ out_free:
+	TSSPRIVKEY_free(tpk);
+	return ret;
+}
+
+int tpm2_get_signed_policy(char *tpmkey, STACK_OF(TSSAUTHPOLICY) **sk)
+{
+	TSSPRIVKEY *tpk;
+
+	*sk = NULL;
+	tpm2_read_tpk(tpmkey, &tpk);
+	if (!tpk)
+		return 1;
+
+	if (tpk->authPolicy) {
+		*sk = sk_TSSAUTHPOLICY_dup(tpk->authPolicy);
+		/* dup does not duplicate elements, so transfer ownership */
+		sk_TSSAUTHPOLICY_zero(tpk->authPolicy);
+	}
+
+	TSSPRIVKEY_free(tpk);
+	return 0;
+}
+
 TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
 			      TSSAUTHPOLICY *ap, TPMT_HA *digest)
 {
@@ -2368,24 +2451,10 @@ TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
 	BYTE buf[1024];
 	UINT16 written = 0;
 
-	bf = BIO_new_file(tpmkey, "r");
-	if (!bf) {
-		fprintf(stderr, "File %s does not exist or cannot be read\n",
-			tpmkey);
+	tpm2_read_tpk(tpmkey, &tpk);
+	if (!tpk)
 		return 0;
-	}
 
-	tpk = PEM_read_bio_TSSPRIVKEY(bf, NULL, NULL, NULL);
-	if (!tpk) {
-		BIO_seek(bf, 0);
-		ERR_clear_error();
-		tpk = ASN1_item_d2i_bio(ASN1_ITEM_rptr(TSSPRIVKEY), bf, NULL);
-	}
-	BIO_free(bf);
-	if (!tpk) {
-		fprintf(stderr, "Cannot parse file as TPM key\n");
-		return 0;
-	}
 	if (!tpk->policy || sk_TSSOPTPOLICY_num(tpk->policy) <= 0) {
 		fprintf(stderr, "TPM Key has no policy\n");
 		goto err_free_tpmkey;
@@ -2460,17 +2529,10 @@ TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
 	 * latest policy addition first */
 	sk_TSSAUTHPOLICY_unshift(tpk->authPolicy, ap);
 
-	bf = BIO_new_file(tpmkey, "w");
-	if (bf == NULL) {
-		fprintf(stderr, "Failed to open key file %s for writing\n",
-			tpmkey);
-		goto err_free_tpmkey;
-	}
-	PEM_write_bio_TSSPRIVKEY(bf, tpk);
-	BIO_free(bf);
+	rc = tpm2_write_tpk(tpmkey, tpk);
 
 	TSSPRIVKEY_free(tpk);
-	return 0;
+	return rc;
 
  err_free_tpmkey:
 	TSSPRIVKEY_free(tpk);
