@@ -3,10 +3,10 @@ set -x
 
 # remove any prior TPM contents
 rm -f NVChip h*.bin *.permall
-if [ -x "${SWTPM}" ]; then
-${SWTPM} socket --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --tpmstate dir=`pwd` &
-else
+if [ -x "${TPMSERVER}" ]; then
 ${TPMSERVER} > /dev/null 2>&1  &
+else
+${SWTPM} socket --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --tpmstate dir=`pwd` &
 fi
 pid=$!
 echo ${pid} > tpm_server.pid
@@ -16,7 +16,7 @@ echo ${pid} > tpm_server.pid
 # store it permanently at handle 81000001 and flush the transient
 ##
 a=0; while [ $a -lt 10 ]; do
-    if [ -x "${SWTPM_IOCTL}" ]; then
+    if [ ! -x "${TPMSERVER}" -a -x "${SWTPM_IOCTL}" ]; then
 	${SWTPM_IOCTL} --tcp 127.0.0.1:2322 -i
     else
 	tsspowerup
