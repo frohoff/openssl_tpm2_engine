@@ -70,6 +70,7 @@
 #define TPM_CC_PolicyAuthValue	TPM2_CC_PolicyAuthValue
 #define TPM_CC_PolicyCounterTimer	TPM2_CC_PolicyCounterTimer
 #define TPM_CC_PolicyAuthorize	TPM2_CC_PolicyAuthorize
+#define TPM_CC_PolicyLocality	TPM2_CC_PolicyLocality
 
 #define TPM_ST_HASHCHECK	TPM2_ST_HASHCHECK
 
@@ -178,6 +179,7 @@ TYPE##_Unmarshal##ARG(TYPE *dest,					\
 }
 
 TSS_CONVERT_MARSHAL(TPMT_PUBLIC, )
+TSS_CONVERT_MARSHAL(UINT8, *)
 TSS_CONVERT_MARSHAL(UINT16, *)
 TSS_CONVERT_MARSHAL(TPMT_SENSITIVE, )
 TSS_CONVERT_MARSHAL(TPM2B_ECC_POINT, )
@@ -1042,6 +1044,15 @@ tpm2_PolicyAuthorize(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 				    ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
 				    approvedPolicy, policyRef, keySign,
 				    checkTicket);
+}
+
+static inline TPM_RC
+tpm2_PolicyLocality(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+		    UINT8 locality)
+{
+	return Esys_PolicyLocality(tssContext, policySession,
+				   ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+				   locality);
 }
 
 static inline TPM_RC

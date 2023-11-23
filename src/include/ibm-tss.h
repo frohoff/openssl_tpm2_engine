@@ -586,6 +586,26 @@ tpm2_PolicyRestart(TSS_CONTEXT *tssContext, TPM_HANDLE sessionHandle)
 }
 
 static inline TPM_RC
+tpm2_PolicyLocality(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+		    UINT8 locality)
+{
+	PolicyLocality_In in;
+	TPM_RC rc;
+
+	in.policySession = policySession;
+	in.locality.val = locality;
+
+	rc = TSS_Execute(tssContext,
+			 NULL,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_PolicyLocality,
+			 TPM_RH_NULL, NULL, 0);
+
+	return rc;
+}
+
+static inline TPM_RC
 tpm2_PolicyGetDigest(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 		     DIGEST_2B *digest)
 {
