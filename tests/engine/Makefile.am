@@ -27,6 +27,7 @@ TESTS += ../check_curves.sh \
 	../restricted_parent.sh \
 	../seal_unseal.sh \
 	../check_signed_policies.sh \
+	../check_locality.sh \
 	../dynamic_engine.sh \
 	../stop_sw_tpm.sh
 

@@ -29,6 +29,7 @@ TESTS += ../check_curves.sh \
 	../restricted_parent.sh \
 	../seal_unseal.sh \
 	../check_signed_policies.sh \
+	../check_locality.sh \
 	../stop_sw_tpm.sh
 
 fail_connect.sh: tpm_server_found
