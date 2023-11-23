@@ -27,11 +27,13 @@
 #include "tpm2-common.h"
 
 #define OPT_SIGNED_POLICY 0x1fd
+#define OPT_LOCALITY 0x1fc
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
 	{"help", 0, 0, 'h'},
 	{"pcr-lock", 1, 0, 'x'},
+	{"locality", 1, 0, OPT_LOCALITY },
 	{"signed-policy", 1, 0, OPT_SIGNED_POLICY },
 	{"version", 0, 0, 'v'},
 	{"key-policy", 1, 0, 'c'},
@@ -53,7 +55,8 @@ usage(char *argv0)
 		"\t-x, --pcr-lock <pcrs>         Lock the created key to the specified PCRs\n"
 		"                                By current value.  See PCR VALUES for\n"
 		"                                details about formatting\n"
-		"\n"
+		"\t--locality <loc>              Can only be used in a set of localities\n"
+		"                                described by the <loc> bitmap\n"
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
 		"\t                              to authorize use of the key\n"
@@ -110,6 +113,8 @@ int main(int argc, char **argv)
 	TPMT_HA digest;
 	int size;
 	TPML_PCR_SELECTION pcr_lock = { 0 };
+	int has_locality = 0;
+	int locality = 0;
 	STACK_OF(TSSAUTHPOLICY) *sk;
 	enum cmd {
 		CMD_ADD = 0,
@@ -177,6 +182,10 @@ int main(int argc, char **argv)
 			case OPT_SIGNED_POLICY:
 				signed_policy = optarg;
 				break;
+			case OPT_LOCALITY:
+				has_locality = 1;
+				locality = strtol(optarg, NULL, 0);
+				break;
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv0);
@@ -188,6 +197,11 @@ int main(int argc, char **argv)
 	    (cmd == CMD_LS && optind != argc - 1)) {
 		fprintf(stderr, "Incorrect number of arguments\n");
 		usage(argv0);
+	}
+
+	if (has_locality && locality == 0) {
+		fprintf(stderr, "zero is an illegal locality bitmap\n");
+		exit(1);
 	}
 
 	switch(cmd) {
@@ -253,6 +267,9 @@ int main(int argc, char **argv)
 				goto out_free_policy;
 			}
 		}
+
+		if (has_locality)
+			tpm2_add_locality(ap->policy, locality, &digest);
 
 		rc = tpm2_new_signed_policy(filename, policy_signing_key,
 					    engine, ap, &digest);

@@ -1173,6 +1173,13 @@ static TPM_RC tpm2_try_policy(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 
 			break;
 		}
+		case TPM_CC_PolicyLocality:
+			rc = tpm2_PolicyLocality(tssContext, handle, policy[0]);
+			if (rc)
+				sprintf(reason, "Locality Check 0x%x failed",
+					policy[0]);
+			break;
+
 		default:
 			fprintf(stderr, "%sUnsupported policy command %d\n",
 				prefix, commands[i].code);
@@ -2752,6 +2759,30 @@ void tpm2_add_auth_policy(STACK_OF(TSSOPTPOLICY) *sk, TPMT_HA *digest)
 
 	ASN1_INTEGER_set(policy->CommandCode, cc);
 	ASN1_STRING_set(policy->CommandPolicy, "", 0);
+	sk_TSSOPTPOLICY_push(sk, policy);
+
+	TSS_Hash_Generate(digest,
+			  TSS_GetDigestSize(digest->hashAlg),
+			  (uint8_t *)&digest->digest,
+			  written, buf, 0, NULL);
+}
+
+void tpm2_add_locality(STACK_OF(TSSOPTPOLICY) *sk, UINT8 locality,
+		       TPMT_HA *digest)
+{
+	TSSOPTPOLICY *policy = TSSOPTPOLICY_new();
+	BYTE buf[5];
+	BYTE *buffer = buf;
+	UINT16 written = 0;
+	INT32 size = sizeof(buf);
+	const TPM_CC cc = TPM_CC_PolicyLocality;
+
+	TSS_TPM_CC_Marshal(&cc, &written, &buffer, &size);
+	TSS_UINT8_Marshal(&locality, &written, &buffer, &size);
+
+	ASN1_INTEGER_set(policy->CommandCode, cc);
+	ASN1_STRING_set(policy->CommandPolicy, buf + 4, written - 4);
+
 	sk_TSSOPTPOLICY_push(sk, policy);
 
 	TSS_Hash_Generate(digest,

@@ -104,6 +104,8 @@ TPM_RC tpm2_pcr_lock_policy(TSS_CONTEXT *tssContext,
 			    STACK_OF(TSSOPTPOLICY) *sk,
 			    TPMT_HA *digest);
 void tpm2_add_auth_policy(STACK_OF(TSSOPTPOLICY) *sk, TPMT_HA *digest);
+void tpm2_add_locality(STACK_OF(TSSOPTPOLICY) *sk, UINT8 locality,
+		       TPMT_HA *digest);
 EVP_PKEY *openssl_read_public_key(char *filename);
 void tpm2_public_template_rsa(TPMT_PUBLIC *pub);
 void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve);

@@ -22,6 +22,7 @@
 #include "tpm2-common.h"
 
 #define OPT_SIGNED_POLICY 0x1fd
+#define OPT_LOCALITY 0x1fc
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
@@ -29,6 +30,7 @@ static struct option long_options[] = {
 	{"help", 0, 0, 'h'},
 	{"parent-handle", 1, 0, 'p'},
 	{"pcr-lock", 1, 0, 'x'},
+	{"locality", 1, 0, OPT_LOCALITY },
 	{"signed-policy", 1, 0, OPT_SIGNED_POLICY },
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
@@ -78,6 +80,8 @@ usage(char *argv0)
 		"\t-x, --pcr-lock <pcrs>         Lock the created key to the specified PCRs\n"
 		"                                By current value.  See PCR VALUES for\n"
 		"                                details about formatting\n"
+		"\t--locality <loc>              Can only be unsealed in a set of localities\n"
+		"                                described by the <loc> bitmap\n"
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
 		"\t                              to authorize unsealing\n"
@@ -143,6 +147,7 @@ int main(int argc, char **argv)
 	int has_policy = 0;
 	char *signed_policy = NULL;
 	ENCRYPTED_SECRET_2B secret, *enc_secret = NULL;
+	int has_locality = 0, locality = 0;
 
 	pcr_lock.count = 0;
 
@@ -213,6 +218,10 @@ int main(int argc, char **argv)
 		case OPT_SIGNED_POLICY:
 			signed_policy = optarg;
 			break;
+		case OPT_LOCALITY:
+			has_locality = 1;
+			locality = strtol(optarg, NULL, 0);
+			break;
 		default:
 			printf("Unknown option '%c'\n", c);
 			usage(argv[0]);
@@ -241,7 +250,13 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (pcr_lock.count != 0 || policyFilename || signed_policy)
+	if (has_locality && locality == 0) {
+		fprintf(stderr, "zero is an illegal locality bitmap\n");
+		exit(1);
+	}
+
+	if (pcr_lock.count != 0 || policyFilename || signed_policy ||
+	    has_locality)
 		has_policy = 1;
 
 	digest.hashAlg = name_alg;
@@ -321,6 +336,9 @@ int main(int argc, char **argv)
 			phandle = parent;
 		}
 	}
+
+	if (has_locality)
+		tpm2_add_locality(sk, locality, &digest);
 
 	tpm2_public_template_seal(p);
 

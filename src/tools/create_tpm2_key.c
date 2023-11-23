@@ -29,6 +29,7 @@
 #define OPT_DEPRECATED 0x1ff
 #define OPT_RESTRICTED 0x1fe
 #define OPT_SIGNED_POLICY 0x1fd
+#define OPT_LOCALITY 0x1fc
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
@@ -39,6 +40,7 @@ static struct option long_options[] = {
 	{"parent-handle", 1, 0, 'p'},
 	{"pcr-lock", 1, 0, 'x'},
 	{"signed-policy", 1, 0, OPT_SIGNED_POLICY },
+	{"locality", 1, 0, OPT_LOCALITY },
 	{"wrap", 1, 0, 'w'},
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
@@ -98,6 +100,8 @@ usage(char *argv0)
 		"\t-x, --pcr-lock <pcrs>         Lock the created key to the specified PCRs\n"
 		"                                By current value.  See PCR VALUES for\n"
 		"                                details about formatting\n"
+		"\t--locality <loc>              Can only be used in a set of localities\n"
+		"                                described by the <loc> bitmap\n"
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
 		"\t                              to authorize use of the key\n"
@@ -478,7 +482,8 @@ int main(int argc, char **argv)
 	int restricted = 0;
 	char *parent_str = NULL;
 	TPML_PCR_SELECTION pcr_lock = { 0 };
-	int has_policy = 0;
+	int has_policy = 0, has_locality = 0;
+	UINT8 locality = 0;
 
 	OpenSSL_add_all_digests();
 	/* may be needed to decrypt the key */
@@ -573,6 +578,10 @@ int main(int argc, char **argv)
 			case OPT_SIGNED_POLICY:
 				signed_policy = optarg;
 				break;
+			case OPT_LOCALITY:
+				has_locality = 1;
+				locality = strtol(optarg, NULL, 0);
+				break;
 			default:
 				printf("Unknown option '%c'\n", c);
 				usage(argv[0]);
@@ -627,7 +636,13 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	if (pcr_lock.count != 0 || policyFilename || signed_policy)
+	if (has_locality && locality == 0) {
+		fprintf(stderr, "zero is an illegal locality bitmap\n");
+		exit(1);
+	}
+
+	if (pcr_lock.count != 0 || policyFilename || signed_policy ||
+	    has_locality)
 		has_policy = 1;
 
 	digest.hashAlg = name_alg;
@@ -670,6 +685,9 @@ int main(int argc, char **argv)
 		if (has_policy && !policyFilename)
 			tpm2_add_auth_policy(sk, &digest);
 	}
+
+	if (has_locality)
+		tpm2_add_locality(sk, locality, &digest);
 
 	if (import) {
 		EVP_PKEY *p_pkey = openssl_read_public_key(import);
