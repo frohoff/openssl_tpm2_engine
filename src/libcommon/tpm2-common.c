@@ -3107,6 +3107,7 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 		 &null_2b, &null_2b, SHA256_DIGEST_LENGTH*8);
 	/* OK the ephermeral public point is now the encrypted secret */
 	size = sizeof(ephemeral_pt);
+	written = 0;
 	buf = enc_secret->secret;
 	TSS_TPM2B_ECC_POINT_Marshal(&ephemeral_pt, &written,
 				    &buf, &size);
