@@ -20,7 +20,7 @@ static void *tpm2_keymgmt_load(void *ref, size_t ref_size)
 	return ad;
 }
 
-static void tpm2_keymgmt_free(void *ref)
+void tpm2_keymgmt_free(void *ref)
 {
 	struct app_data *ad = ref;
 	int refcnt = atomic_fetch_sub_explicit(&ad->refs, 1,

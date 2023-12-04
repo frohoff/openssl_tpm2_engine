@@ -32,6 +32,11 @@ static void tpm2_decryption_freectx(void *ctx)
 {
 	struct decryption_ctx *dctx = ctx;
 
+	if (dctx->ad)
+		tpm2_keymgmt_free(dctx->ad);
+	if (dctx->peer_ad)
+		tpm2_keymgmt_free(dctx->peer_ad);
+
 	osslm_decryption_freectx(&dctx->dctx);
 	OPENSSL_free(dctx);
 }
@@ -108,6 +113,8 @@ tpm2_keyexch_init(void *ctx, void *key, const OSSL_PARAM params[])
 	struct decryption_ctx *dctx = ctx;
 
 	dctx->ad = key;
+	atomic_fetch_add_explicit(&dctx->ad->refs, 1,
+				  memory_order_relaxed);
 
 	return 1;
 }
@@ -118,6 +125,8 @@ tpm2_keyexch_set_peer(void *ctx, void *peerkey)
 	struct decryption_ctx *dctx = ctx;
 
 	dctx->peer_ad = peerkey;
+	atomic_fetch_add_explicit(&dctx->peer_ad->refs, 1,
+				  memory_order_relaxed);
 
 	return 1;
 }
