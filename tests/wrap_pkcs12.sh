@@ -10,8 +10,13 @@
 
 openssl ecparam -genkey -name prime256v1 > tmp.param || exit 1
 openssl genpkey -paramfile tmp.param -out key.priv || exit 1
-openssl req -new -x509 -subj '/CN=test CA/' -key key.priv -out tmp.crt || exit 1
-openssl pkcs12 -out tmp.p12 -passout pass: -export -inkey key.priv -in tmp.crt
+# warning: openssl 3.2 bug; subshell execution with standard openssl.cnf
+# to work around
+(
+    unset OPENSSL_CONF
+    openssl req -new -x509 -subj '/CN=test CA/' -key key.priv --extensions v3_ca -out tmp.crt || exit 1
+    openssl pkcs12 -out tmp.p12 -passout pass: -export -inkey key.priv -in tmp.crt
+)
 
 ${bindir}/create_tpm2_key -w tmp.p12 key.tpm || exit 1
 
