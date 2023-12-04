@@ -7,6 +7,7 @@ set -x
 unset OPENSSL_CONF
 export OPENSSL_ENGINES=${testdir}/../src/engine/.libs
 ln -s libtpm2.so ${OPENSSL_ENGINES}/tpm2.so
+export LD_LIBRARY_PATH=${OPENSSL_ENGINES}:{LD_LIBRARY_PATH}
 
 testkey() {
     openssl pkey $ENGINE $INFORM -in key.tpm -pubout -out key.pub || exit 1
