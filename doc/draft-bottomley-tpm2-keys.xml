@@ -23,7 +23,7 @@ An alternate method (rfc include) is described in the references.
         <email>James.Bottomley@HansenPartnership.com</email>
       </address>
     </author>
-    <date month="June" year="2023"/>
+    <date month="December" year="2023"/>
     <area>Security</area>
     <keyword>I-D</keyword>
     <keyword>Internet-Draft</keyword>
@@ -277,7 +277,7 @@ An alternate method (rfc include) is described in the references.
 	    This is a binary string representing a fully marshalled,
 	    TPM ordered, command body for the TPM policy command.
 	    Therefore to send the command, the implementation simply
-	    marshalls the command code and appends this octet string
+	    marshals the command code and appends this octet string
 	    as the body.
 	  </t>
 	  <t>
@@ -518,6 +518,25 @@ An alternate method (rfc include) is described in the references.
 	    booting a system (as in the kernel boot disk unlock above)
 	    should base their expiration on reboot count rather than
 	    the TPM clock.
+	  </t>
+	</section>
+	<section title="Policy Signing Keys and policyRef values">
+	  <t>
+	    There is a high likelihood that a consumer would use the
+	    same policy signing key for multiple TPM objects with
+	    signed policy.  This gives rise to the risk that a
+	    malicious user could extract signed policy meant for key1
+	    and use it instead with key2 (policy swapping).  To
+	    mitigate this risk, the implementation SHOULD place a high
+	    entropy nonce in policyRef to ensure that each key has a
+	    different policyRef which prevents this policy swapping.
+	  </t>
+	  <t>
+	    The TCG specifies that policyRef could have an
+	    implementation defined meaning in which case
+	    implementations MAY use implementation meaningful values
+	    instead of nonces for policyRef but SHOULD take other
+	    measures to prevent policy swapping.
 	  </t>
 	</section>
       </section>
