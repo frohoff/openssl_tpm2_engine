@@ -177,7 +177,8 @@ static int tpm2_engine_load_nvkey(ENGINE *e, EVP_PKEY **ppkey,
 
 		rc = tpm2_get_bound_handle(tssContext, &session, key, NULL);
 		if (rc == TPM_RC_SUCCESS) {
-			rc = tpm2_ReadPublic(tssContext, key, NULL, session);
+			rc = tpm2_ReadPublic(tssContext, key, NULL, session,
+					     NULL);
 			if (rc)
 				tpm2_flush_handle(tssContext, session);
 		}

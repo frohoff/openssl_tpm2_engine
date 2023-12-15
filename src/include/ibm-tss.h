@@ -163,7 +163,7 @@ tpm2_EvictControl(TSS_CONTEXT *tssContext, TPM_HANDLE objectHandle,
 
 static inline TPM_RC
 tpm2_ReadPublic(TSS_CONTEXT *tssContext, TPM_HANDLE objectHandle,
-		TPMT_PUBLIC *pub, TPM_HANDLE auth)
+		TPMT_PUBLIC *pub, TPM_HANDLE auth, NAME_2B *name)
 {
 	ReadPublic_In rin;
 	ReadPublic_Out rout;
@@ -190,6 +190,35 @@ tpm2_ReadPublic(TSS_CONTEXT *tssContext, TPM_HANDLE objectHandle,
 
 	if (pub)
 		*pub = rout.outPublic.publicArea;
+	if (name)
+		*name = rout.name.t;
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_NV_ReadPublic(TSS_CONTEXT *tssContext, TPM_HANDLE nvIndex,
+		   NAME_2B *nvName)
+{
+	TPM_RC rc;
+	NV_ReadPublic_In in;
+	NV_ReadPublic_Out out;
+
+	in.nvIndex = nvIndex;
+	rc = TSS_Execute (tssContext,
+			  (RESPONSE_PARAMETERS *)&out,
+			  (COMMAND_PARAMETERS *)&in,
+			  NULL,
+			  TPM_CC_NV_ReadPublic,
+			  TPM_RH_NULL, NULL, 0);
+
+	if (rc) {
+		tpm2_error(rc, "TPM2_NV_ReadPublic");
+		return rc;
+	}
+
+	if (nvName)
+		*nvName = out.nvName.t;
 
 	return rc;
 }
@@ -379,7 +408,7 @@ tpm2_StartAuthSession(TSS_CONTEXT *tssContext, TPM_HANDLE tpmKey,
 		 * access to the public part.  It does this by keeping
 		 * key files, but request the public part just to make
 		 * sure*/
-		tpm2_ReadPublic(tssContext, tpmKey,  NULL, TPM_RH_NULL);
+		tpm2_ReadPublic(tssContext, tpmKey,  NULL, TPM_RH_NULL, NULL);
 		/* don't care what rout returns, the purpose of the
 		 * operation was to get the public key parameters into
 		 * the tss so it can construct the salt */

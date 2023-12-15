@@ -984,7 +984,7 @@ EVP_PKEY *tpm2_to_openssl_public(TPMT_PUBLIC *pub)
 TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 		       TPMT_PUBLIC *pub)
 {
-	return tpm2_ReadPublic(tssContext, handle, pub, TPM_RH_NULL);
+	return tpm2_ReadPublic(tssContext, handle, pub, TPM_RH_NULL, NULL);
 }
 
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
@@ -1443,6 +1443,10 @@ void tpm2_rm_keyfile(const char *dir, TPM_HANDLE key)
 	unlink(keyfile);
 	snprintf(keyfile, sizeof(keyfile), "%s/hp%08x.bin", dir, key);
 	unlink(keyfile);
+	if ((key >> 24) == TPM_HT_NV_INDEX) {
+		snprintf(keyfile, sizeof(keyfile), "%s/nvp%08x.bin", dir, key);
+		unlink(keyfile);
+	}
 }
 
 void tpm2_rm_tssdir(const char *dir)

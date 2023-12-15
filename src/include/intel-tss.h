@@ -79,6 +79,7 @@
 #define TPM_RH_ENDORSEMENT	ESYS_TR_RH_ENDORSEMENT
 #define TPM_RH_NULL		ESYS_TR_NONE
 
+#define TPM_HT_NV_INDEX		TPM2_HT_NV_INDEX
 #define TPM_HT_PERMANENT	TPM2_HT_PERMANENT
 #define TPM_HT_TRANSIENT	TPM2_HT_TRANSIENT
 #define TPM_HT_PERSISTENT	TPM2_HT_PERSISTENT
@@ -184,6 +185,7 @@ TSS_CONVERT_MARSHAL(UINT16, *)
 TSS_CONVERT_MARSHAL(TPMT_SENSITIVE, )
 TSS_CONVERT_MARSHAL(TPM2B_ECC_POINT, )
 TSS_CONVERT_MARSHAL(TPM2B_DIGEST, )
+TSS_CONVERT_MARSHAL(TPM2B_NAME, )
 TSS_CONVERT_MARSHAL(TPM2B_PUBLIC, )
 TSS_CONVERT_MARSHAL(TPM2B_PRIVATE, )
 TSS_CONVERT_MARSHAL(TPML_PCR_SELECTION, )
@@ -198,6 +200,7 @@ TSS_CONVERT_UNMARSHAL(TPM2B_ENCRYPTED_SECRET, )
 TSS_CONVERT_UNMARSHAL(UINT16, )
 TSS_CONVERT_UNMARSHAL(UINT32, )
 TSS_CONVERT_UNMARSHAL(TPM2B_DIGEST, )
+TSS_CONVERT_UNMARSHAL(TPM2B_NAME, )
 TSS_CONVERT_UNMARSHAL(TPMT_SIGNATURE, X)
 
 #define ARRAY_SIZE(A) (sizeof(A)/sizeof(A[0]))
@@ -798,22 +801,45 @@ tpm2_EvictControl(TSS_CONTEXT *tssContext, TPM_HANDLE objectHandle,
 
 static inline TPM_RC
 tpm2_ReadPublic(TSS_CONTEXT *tssContext, TPM_HANDLE objectHandle,
-		TPMT_PUBLIC *pub, TPM_HANDLE auth)
+		TPMT_PUBLIC *pub, TPM_HANDLE auth, NAME_2B *name)
 {
 	TPM2B_PUBLIC *out;
+	NAME_2B *out_name;
 	TPM_RC rc;
 
 	if (auth != TPM_RH_NULL)
 		intel_sess_helper(tssContext, auth, TPMA_SESSION_ENCRYPT);
 
 	rc = Esys_ReadPublic(tssContext, objectHandle, auth, ESYS_TR_NONE,
-			     ESYS_TR_NONE, &out, NULL, NULL);
+			     ESYS_TR_NONE, &out, &out_name, NULL);
 	if (rc)
 		return rc;
 
 	if (pub)
 		*pub = out->publicArea;
+	if (name)
+		*name = *out_name;
 	free(out);
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_NV_ReadPublic(TSS_CONTEXT *tssContext, TPM_HANDLE nvIndex,
+		   NAME_2B *nvName)
+{
+	TPM_RC rc;
+	NAME_2B *name;
+
+	rc = Esys_NV_ReadPublic(tssContext, nvIndex, ESYS_TR_NONE, ESYS_TR_NONE,
+				ESYS_TR_NONE, NULL, &name);
+
+	if (rc)
+		return rc;
+
+	if (nvName)
+		*nvName = *name;
+	free(name);
 
 	return rc;
 }
