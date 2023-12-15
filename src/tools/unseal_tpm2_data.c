@@ -73,6 +73,7 @@ int main(int argc, char **argv)
 	uint32_t parent, session;
 	UI_METHOD *ui = UI_create_method("unseal");
 	struct app_data *app_data;
+	const char *auth;
 
 	while (1) {
 		option_index = 0;
@@ -156,17 +157,13 @@ int main(int argc, char **argv)
 		goto out_flush_data;
 	}
 
-	if (app_data->req_policy_session) {
-		rc = tpm2_init_session(tssContext, session,
-				       app_data, name_alg);
-		if (rc) {
-			reason = "tpm2_init_session";
-			goto out_flush_session;
-		}
+	rc = tpm2_init_session(tssContext, session, app_data, &auth);
+	if (rc) {
+		reason = "tpm2_init_session";
+		goto out_flush_session;
 	}
 
-	rc = tpm2_Unseal(tssContext, itemHandle, &outData, session,
-			 app_data->auth);
+	rc = tpm2_Unseal(tssContext, itemHandle, &outData, session, auth);
 
 	if (rc) {
 		reason = "TPM2_Unseal";

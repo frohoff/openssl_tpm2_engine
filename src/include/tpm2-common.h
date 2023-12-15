@@ -62,7 +62,7 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			       TPM_HANDLE salt_key, TPM_SE sessionType,
 			       TPM_ALG_ID name_alg);
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
-			 const struct app_data *app_data, TPM_ALG_ID name_alg);
+			 const struct app_data *app_data, const char **auth);
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth);
 TPMI_ECC_CURVE tpm2_curve_name_to_TPMI(const char *name);

@@ -475,6 +475,7 @@ int tpm2_rsa_decrypt(const struct app_data *ad, PUBLIC_KEY_RSA_2B *cipherText,
 	PUBLIC_KEY_RSA_2B message;
 	TPM_HANDLE authHandle;
 	TPM_SE sessionType;
+	const char *auth;
 
 	keyHandle = tpm2_load_key(&tssContext, ad, srk_auth, NULL);
 
@@ -505,15 +506,12 @@ int tpm2_rsa_decrypt(const struct app_data *ad, PUBLIC_KEY_RSA_2B *cipherText,
 	if (rc)
 		goto out;
 
-	if (sessionType == TPM_SE_POLICY) {
-		rc = tpm2_init_session(tssContext, authHandle,
-				       ad, ad->Public.publicArea.nameAlg);
-		if (rc)
-			goto out;
-	}
+	rc = tpm2_init_session(tssContext, authHandle, ad, &auth);
+	if (rc)
+		goto out;
 
 	rc = tpm2_RSA_Decrypt(tssContext, keyHandle, cipherText, &inScheme,
-			      &message, authHandle, ad->auth, protection);
+			      &message, authHandle, auth, protection);
 
 	if (rc) {
 		tpm2_error(rc, "TPM2_RSA_Decrypt");
@@ -543,6 +541,7 @@ ECDSA_SIG *tpm2_sign_ecc(const struct app_data *ad, const unsigned char *dgst,
 	TPM_SE sessionType;
 	ECDSA_SIG *sig;
 	BIGNUM *r, *s;
+	const char *auth;
 	int len = tpm2_curve_to_order(ad->Public.publicArea.parameters.eccDetail.curveID);
 
 	/* so we give it a digest equal to the key length, except if that
@@ -590,15 +589,12 @@ ECDSA_SIG *tpm2_sign_ecc(const struct app_data *ad, const unsigned char *dgst,
 	if (rc)
 		goto out;
 
-	if (sessionType == TPM_SE_POLICY) {
-		rc = tpm2_init_session(tssContext, authHandle,
-				       ad, ad->Public.publicArea.nameAlg);
-		if (rc)
-			goto out;
-	}
+	rc = tpm2_init_session(tssContext, authHandle, ad, &auth);
+	if (rc)
+		goto out;
 
 	rc = tpm2_Sign(tssContext, keyHandle, &digest, &inScheme, &signature,
-		       authHandle, ad->auth);
+		       authHandle, auth);
 	if (rc) {
 		tpm2_error(rc, "TPM2_Sign");
 		tpm2_flush_handle(tssContext, authHandle);
@@ -638,6 +634,7 @@ int tpm2_ecdh_x(struct app_data *ad, unsigned char **psec, size_t *pseclen,
 	TPM_SE sessionType;
 	size_t len;
 	int ret;
+	const char *auth;
 
 	keyHandle = tpm2_load_key(&tssContext, ad, srk_auth, NULL);
 	if (keyHandle == 0) {
@@ -654,12 +651,9 @@ int tpm2_ecdh_x(struct app_data *ad, unsigned char **psec, size_t *pseclen,
 	if (rc)
 		goto out;
 
-	if (sessionType == TPM_SE_POLICY) {
-		rc = tpm2_init_session(tssContext, authHandle,
-				       ad, ad->Public.publicArea.nameAlg);
-		if (rc)
-			goto out;
-	}
+	rc = tpm2_init_session(tssContext, authHandle, ad, &auth);
+	if (rc)
+		goto out;
 
 	rc = tpm2_ECDH_ZGen(tssContext, keyHandle, inPoint, &outPoint,
 			    authHandle, ad->auth);
@@ -1034,7 +1028,8 @@ TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 
 static TPM_RC tpm2_try_policy(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			      int num_commands, struct policy_command *commands,
-			      TPM_ALG_ID name_alg, const char *prefix)
+			      TPM_ALG_ID name_alg, const char *prefix,
+			      const struct app_data *ad, const char **auth)
 {
 	INT32 size;
 	BYTE *policy;
@@ -1217,12 +1212,18 @@ static TPM_RC tpm2_try_policy(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 }
 
 TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
-			 const struct app_data *app_data, TPM_ALG_ID name_alg)
+			 const struct app_data *app_data, const char **auth)
 {
 	int num_commands;
 	struct policy_command *commands;
 	char prefix[128];
 	TPM_RC rc;
+	TPM_ALG_ID name_alg = app_data->Public.publicArea.nameAlg;
+
+	*auth = app_data->auth;
+
+	if (!tpm2_handle_mso(tssContext, handle, TPM_HT_POLICY_SESSION))
+		return TPM_RC_SUCCESS;
 
 	if (app_data->pols == NULL)
 		return TPM_RC_SUCCESS;
@@ -1251,7 +1252,8 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 			rc = tpm2_try_policy(tssContext, handle,
 					     pols->num_commands,
 					     pols->commands,
-					     name_alg, prefix);
+					     name_alg, prefix,
+					     app_data, auth);
 			if (rc == TPM_RC_SUCCESS)
 				break;
 		}
@@ -1262,7 +1264,7 @@ TPM_RC tpm2_init_session(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 	}
 
 	rc = tpm2_try_policy(tssContext, handle, num_commands, commands,
-			     name_alg, "");
+			     name_alg, "", app_data, auth);
  out:
 	if (rc != TPM_RC_SUCCESS)
 		tpm2_flush_handle(tssContext, handle);
