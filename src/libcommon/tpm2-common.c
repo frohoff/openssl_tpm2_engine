@@ -1175,6 +1175,34 @@ static TPM_RC tpm2_try_policy(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 					policy[0]);
 			break;
 
+		case TPM_CC_PolicySecret: {
+			NAME_2B name;
+			DIGEST_2B policyRef;
+			TPM_HANDLE authHandle;
+
+			rc = UINT32_Unmarshal(&authHandle, &policy, &size);
+			if (rc)
+				goto unmarshal_failure;
+			rc = TPM2B_NAME_Unmarshal((TPM2B_NAME *)&name, &policy, &size);
+			if (rc)
+				goto unmarshal_failure;
+			rc = TPM2B_DIGEST_Unmarshal((TPM2B_DIGEST *)&policyRef, &policy, &size);
+			if (rc)
+				goto unmarshal_failure;
+
+			authHandle = tpm2_handle_int(tssContext, authHandle);
+			rc = tpm2_PolicySecret(tssContext, authHandle,
+					       handle, &policyRef, *auth);
+
+			/*
+			 * we consumed auth above, so make sure it
+			 * doesn't get reused in the actual command
+			 */
+			*auth = NULL;
+			tpm2_rm_keyfile(ad->dir, authHandle);
+			break;
+		}
+
 		default:
 			fprintf(stderr, "%sUnsupported policy command %d\n",
 				prefix, commands[i].code);
