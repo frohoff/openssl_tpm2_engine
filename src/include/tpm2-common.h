@@ -117,7 +117,9 @@ TPM_RC tpm2_ObjectPublic_GetName(NAME_2B *name,	 TPMT_PUBLIC *tpmtPublic);
 TPM_RC tpm2_add_signed_policy(STACK_OF(TSSOPTPOLICY) *sk, char *key_file,
 			      TPMT_HA *digest);
 TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
-			      TSSAUTHPOLICY *ap, TPMT_HA *digest);
+			      TSSAUTHPOLICY *ap, TPMT_HA *digest, int need_auth);
+TPM_RC tpm2_add_policy_secret(TSS_CONTEXT *tssContext, STACK_OF(TSSOPTPOLICY) *sk,
+			      TPM_HANDLE handle, TPMT_HA *digest);
 TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 		      TPMT_SENSITIVE *s,
 		      TPMT_PUBLIC *pub,

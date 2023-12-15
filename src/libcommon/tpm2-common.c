@@ -981,6 +981,15 @@ TPM_RC tpm2_readpublic(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 	return tpm2_ReadPublic(tssContext, handle, pub, TPM_RH_NULL, NULL);
 }
 
+static TPM_RC tpm2_readname(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
+			    NAME_2B *name)
+{
+	if (tpm2_handle_mso(tssContext, handle, TPM_HT_NV_INDEX))
+		return tpm2_NV_ReadPublic(tssContext, handle, name);
+	else
+		return tpm2_ReadPublic(tssContext, handle, NULL, TPM_RH_NULL, name);
+}
+
 TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			     TPM_HANDLE bind, const char *auth)
 {
@@ -2474,7 +2483,7 @@ int tpm2_get_signed_policy(char *tpmkey, STACK_OF(TSSAUTHPOLICY) **sk)
 }
 
 TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
-			      TSSAUTHPOLICY *ap, TPMT_HA *digest)
+			      TSSAUTHPOLICY *ap, TPMT_HA *digest, int need_auth)
 {
 	BIO *bf;
 	TSSPRIVKEY *tpk;
@@ -2500,6 +2509,10 @@ TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
 		fprintf(stderr, "TPM Key has no policy\n");
 		goto err_free_tpmkey;
 	}
+
+	/* remove the emptyAuth attribut if set and we need authorization */
+	if (tpk->emptyAuth != -1 && need_auth)
+		tpk->emptyAuth = -1;
 
 	policy = sk_TSSOPTPOLICY_value(tpk->policy, 0);
 	if (ASN1_INTEGER_get(policy->CommandCode) != TPM_CC_PolicyAuthorize) {
@@ -2887,6 +2900,50 @@ TPM_RC tpm2_add_signed_policy(STACK_OF(TSSOPTPOLICY) *sk, char *key_file,
 			  (uint8_t *)&digest->digest, /* intermediate digest */
 			  nonce.size, nonce.buffer,
 			  0, NULL);
+
+	return TPM_RC_SUCCESS;
+}
+
+TPM_RC
+tpm2_add_policy_secret(TSS_CONTEXT *tssContext, STACK_OF(TSSOPTPOLICY) *sk,
+		       TPM_HANDLE handle, TPMT_HA *digest)
+{
+	TSSOPTPOLICY *policy;
+	BYTE buf[1024];
+	BYTE *buffer = buf;
+	UINT16 written = 0;
+	INT32 size = sizeof(buf);
+	const TPM_CC cc = TPM_CC_PolicySecret;
+	NAME_2B name;
+	DIGEST_2B policyRef = {0};
+	TPM_RC rc;
+	TPM_HANDLE intHandle = tpm2_handle_int(tssContext, handle);
+
+	rc = tpm2_readname(tssContext, intHandle, &name);
+	if (rc)
+		return rc;
+	policy = TSSOPTPOLICY_new();
+	TSS_TPM_CC_Marshal(&cc, &written, &buffer, &size);
+	TSS_UINT32_Marshal(&handle, &written, &buffer, &size);
+	TSS_TPM2B_NAME_Marshal((TPM2B_NAME *)&name, &written, &buffer, &size);
+	TSS_TPM2B_DIGEST_Marshal((TPM2B_DIGEST *)&policyRef, &written, &buffer, &size);
+
+	ASN1_INTEGER_set(policy->CommandCode, cc);
+	ASN1_STRING_set(policy->CommandPolicy, buf + 4, written - 4);
+	sk_TSSOPTPOLICY_push(sk, policy);
+
+	TSS_Hash_Generate(digest,
+			  TSS_GetDigestSize(digest->hashAlg),
+			  (uint8_t *)&digest->digest,
+			  4, buf, /* CC */
+			  name.size, name.name, /* name */
+			  0, NULL);
+	TSS_Hash_Generate(digest,
+			  TSS_GetDigestSize(digest->hashAlg),
+			  (uint8_t *)&digest->digest, /* intermediate digest */
+			  policyRef.size, policyRef.buffer,
+			  0, NULL);
+
 
 	return TPM_RC_SUCCESS;
 }

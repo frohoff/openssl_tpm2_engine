@@ -23,6 +23,7 @@
 
 #define OPT_SIGNED_POLICY 0x1fd
 #define OPT_LOCALITY 0x1fc
+#define OPT_SECRET 0x1fb
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
@@ -32,6 +33,7 @@ static struct option long_options[] = {
 	{"pcr-lock", 1, 0, 'x'},
 	{"locality", 1, 0, OPT_LOCALITY },
 	{"signed-policy", 1, 0, OPT_SIGNED_POLICY },
+	{"secret", 1, 0, OPT_SECRET },
 	{"version", 0, 0, 'v'},
 	{"password", 1, 0, 'k'},
 	{"da", 0, 0, 'd'},
@@ -85,6 +87,9 @@ usage(char *argv0)
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
 		"\t                              to authorize unsealing\n"
+		"\t--secret <handle>             Tie authorization of the key to the\n"
+		"\t                              Authorization of a different object\n"
+		"\t                              Identified by <handle>.\n"
 		"\t-i, --import <pubkey>         Create an importable key with the outer\n"
 		"                                wrapper encrypted to <pubkey>\n"
 		"\t-c, --policy                  Specify a policy for unsealing the data\n"
@@ -127,7 +132,7 @@ int main(int argc, char **argv)
 	const char *reason = ""; /* gcc 4.8.5 gives spurious uninitialized warning without this */
 	TPMT_HA digest;
 	uint32_t sizeInBytes;
-	TPM_HANDLE authHandle;
+	TPM_HANDLE authHandle, secret_handle = 0;
 	STACK_OF(TSSOPTPOLICY) *sk = NULL;
 	TPM2B_SENSITIVE_CREATE inSensitive;
 	TPM2B_PUBLIC inPublic;
@@ -221,6 +226,10 @@ int main(int argc, char **argv)
 		case OPT_LOCALITY:
 			has_locality = 1;
 			locality = strtol(optarg, NULL, 0);
+			break;
+		case OPT_SECRET:
+			has_policy = 1;
+			secret_handle = strtol(optarg, NULL, 0);
 			break;
 		default:
 			printf("Unknown option '%c'\n", c);
@@ -340,6 +349,9 @@ int main(int argc, char **argv)
 	if (has_locality)
 		tpm2_add_locality(sk, locality, &digest);
 
+	if (secret_handle)
+		tpm2_add_policy_secret(tssContext, sk, secret_handle, &digest);
+
 	tpm2_public_template_seal(p);
 
 	if (has_policy) {
@@ -445,7 +457,8 @@ int main(int argc, char **argv)
 	TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)&outPrivate, &privkey_len,
 				  &buffer, &size);
 	tpm2_write_tpmfile(filename, pubkey, pubkey_len,
-			   privkey, privkey_len, data_auth == NULL,
+			   privkey, privkey_len,
+			   data_auth == NULL && secret_handle == 0,
 			   parent, sk, 2, enc_secret);
 
  out_flush:

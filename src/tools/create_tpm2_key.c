@@ -30,6 +30,7 @@
 #define OPT_RESTRICTED 0x1fe
 #define OPT_SIGNED_POLICY 0x1fd
 #define OPT_LOCALITY 0x1fc
+#define OPT_SECRET 0x1fb
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
@@ -51,6 +52,7 @@ static struct option long_options[] = {
 	{"key-policy", 1, 0, 'c'},
 	{"import", 1, 0, 'i'},
 	{"restricted", 0, 0, OPT_RESTRICTED },
+	{"secret", 1, 0, OPT_SECRET },
 	/*
 	 * The option --deprecated allows us to create old format keys
 	 * for the purposes of testing.  It should never be used in
@@ -105,6 +107,9 @@ usage(char *argv0)
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
 		"\t                              to authorize use of the key\n"
+		"\t--secret <handle>             Tie authorization of the key to the\n"
+		"\t                              Authorization of a different object\n"
+		"\t                              Identified by <handle>.\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
 		argv0);
@@ -452,7 +457,7 @@ int main(int argc, char **argv)
 	int option_index, c;
 	const char *reason;
 	TSS_CONTEXT *tssContext = NULL;
-	TPM_HANDLE parent = TPM_RH_OWNER, phandle;
+	TPM_HANDLE parent = TPM_RH_OWNER, phandle, secret_handle = 0;
 	TPM_RC rc;
 	BYTE pubkey[sizeof(TPM2B_PUBLIC)],privkey[sizeof(TPM2B_PRIVATE)], *buffer;
 	uint16_t pubkey_len, privkey_len;
@@ -581,6 +586,10 @@ int main(int argc, char **argv)
 			case OPT_LOCALITY:
 				has_locality = 1;
 				locality = strtol(optarg, NULL, 0);
+				break;
+			case OPT_SECRET:
+				secret_handle = strtol(optarg, NULL, 0);
+				has_policy = 1;
 				break;
 			default:
 				printf("Unknown option '%c'\n", c);
@@ -780,6 +789,9 @@ int main(int argc, char **argv)
 		}
 	}
 
+	if (secret_handle)
+		tpm2_add_policy_secret(tssContext, sk, secret_handle, &digest);
+
 	if (parent_str) {
 		parent = tpm2_get_parent(tssContext, parent_str);
 		if (parent == 0) {
@@ -965,7 +977,8 @@ int main(int argc, char **argv)
 	size = sizeof(privkey);
 	TSS_TPM2B_PRIVATE_Marshal((TPM2B_PRIVATE *)priv, &privkey_len, &buffer, &size);
 	tpm2_write_tpmfile(filename, pubkey, pubkey_len,
-			   privkey, privkey_len, auth == NULL, parent, sk,
+			   privkey, privkey_len,
+			   auth == NULL && secret_handle == 0, parent, sk,
 			   version, enc_secret);
 	tpm2_free_policy(sk);
 

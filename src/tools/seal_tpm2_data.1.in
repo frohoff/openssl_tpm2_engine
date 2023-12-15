@@ -40,6 +40,18 @@ Note that certain parameters must be assumed about a parent when it is
 wrapped, like the template (must be standard restricted decryption
 key) and the name hash (must be sha256).
 
+[Secrets in Other Objects]
+
+When the option --secrets <handle> is used, it creates a sealed blob
+whose authorization password is conditioned on the password of a
+different object identified by <handle>.  Usually this is a permanent
+NV index, but could be any object.  The design of this policy is to
+allow the password to be changed without updating the sealed blob
+(simply by changing the authorization of the other object).  Because
+most unseal applications can only request a single password, blobs
+with a --secret policy may not additionally have an --auth option to
+also require passing in the password embedded in the blob.
+
 [Signed Policies]
 
 When the option --signed-policy <key> is used, it creates a sealed

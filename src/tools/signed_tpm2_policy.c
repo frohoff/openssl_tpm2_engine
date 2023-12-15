@@ -28,6 +28,7 @@
 
 #define OPT_SIGNED_POLICY 0x1fd
 #define OPT_LOCALITY 0x1fc
+#define OPT_SECRET 0x1fb
 
 static struct option long_options[] = {
 	{"auth", 0, 0, 'a'},
@@ -35,6 +36,7 @@ static struct option long_options[] = {
 	{"pcr-lock", 1, 0, 'x'},
 	{"locality", 1, 0, OPT_LOCALITY },
 	{"signed-policy", 1, 0, OPT_SIGNED_POLICY },
+	{"secret", 1, 0, OPT_SECRET},
 	{"version", 0, 0, 'v'},
 	{"key-policy", 1, 0, 'c'},
 	{"engine", 1, 0, 'e'},
@@ -60,6 +62,9 @@ usage(char *argv0)
 		"\t--signed-policy <key>         Add a signed policy directive that allows\n"
 		"\t                              policies signed by the specified public <key>\n"
 		"\t                              to authorize use of the key\n"
+		"\t--secret <handle>             Tie authorization of the key to the\n"
+		"\t                              Authorization of a different object\n"
+		"\t                              Identified by <handle>.\n"
 		"\t-n, --policy-name <name>      Optional name to annotate the policy with\n"
 		"\n"
 		"Report bugs to " PACKAGE_BUGREPORT "\n",
@@ -115,6 +120,7 @@ int main(int argc, char **argv)
 	TPML_PCR_SELECTION pcr_lock = { 0 };
 	int has_locality = 0;
 	int locality = 0;
+	int secret_handle = 0;
 	STACK_OF(TSSAUTHPOLICY) *sk;
 	enum cmd {
 		CMD_ADD = 0,
@@ -185,6 +191,9 @@ int main(int argc, char **argv)
 			case OPT_LOCALITY:
 				has_locality = 1;
 				locality = strtol(optarg, NULL, 0);
+				break;
+			case OPT_SECRET:
+				secret_handle = strtol(optarg, NULL, 0);
 				break;
 			default:
 				printf("Unknown option '%c'\n", c);
@@ -271,8 +280,31 @@ int main(int argc, char **argv)
 		if (has_locality)
 			tpm2_add_locality(ap->policy, locality, &digest);
 
+		if (secret_handle) {
+			TSS_CONTEXT *tssContext = NULL;
+			const char *dir;
+
+			dir = tpm2_set_unique_tssdir();
+			rc = tpm2_create(&tssContext, dir);
+			if (rc) {
+				reason = "TSS_Create";
+				goto out_free_policy;
+			}
+
+			rc = tpm2_add_policy_secret(tssContext, ap->policy,
+						    secret_handle, &digest);
+			TSS_Delete(tssContext);
+			tpm2_rm_tssdir(dir);
+			if (rc) {
+				reason = "create object authorization policy";
+				goto out_free_policy;
+			}
+		}
+
+
 		rc = tpm2_new_signed_policy(filename, policy_signing_key,
-					    engine, ap, &digest);
+					    engine, ap, &digest,
+					    auth || secret_handle);
 		if (rc == 0)
 			exit(0);
 

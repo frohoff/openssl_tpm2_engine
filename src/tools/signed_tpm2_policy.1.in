@@ -22,6 +22,18 @@ well as comma separated ranges.  So
 
  sha512:1,3-5 means PCRs 1,3,4 and 5 in the sha512 bank
 
+[Secrets in Other Objects]
+
+When the option --secrets <handle> is used, it creates a key whose
+authorization password is conditioned on the password of a different
+object identified by <handle>.  Usually this is a permanent NV index,
+but could be any object.  The design of this policy is to allow the
+password to be changed without updating the key (simply by changing
+the authorization of the other object).  Because OpenSSL can only
+request a single password, keys with a --secret policy may not
+additionally have an --auth option to also require passing in the
+password embedded in the key.
+
 [examples]
 
 list all signed policies:
