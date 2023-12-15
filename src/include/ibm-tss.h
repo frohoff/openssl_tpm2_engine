@@ -635,6 +635,67 @@ tpm2_PolicyLocality(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 }
 
 static inline TPM_RC
+tpm2_PolicySecret(TSS_CONTEXT *tssContext, TPM_HANDLE authHandle,
+		  TPM_HANDLE policySession, DIGEST_2B *policyRef,
+		  const char *authVal)
+{
+	PolicySecret_In in;
+	PolicySecret_Out out;
+	TPM_RC rc;
+	TPMT_SYM_DEF symmetric;
+	TPM_HANDLE authSession;
+
+	/*
+	 * Simple use case: we take a bound session inside this
+	 * function because we know the auth and we have an object
+	 * handle.  In theory the caller should pass in the session,
+	 * but all current callers would flush the handle immediately
+	 * after so it simplifies the API to do the session setup and
+	 * teardown inside this call.
+	 */
+
+	symmetric.algorithm = TPM_ALG_AES;
+	symmetric.keyBits.aes = 128;
+	symmetric.mode.aes = TPM_ALG_CFB;
+
+	/* need public area pulled in for nonce computation */
+	if ((authHandle >> 24) == TPM_HT_NV_INDEX)
+		tpm2_NV_ReadPublic(tssContext, authHandle, NULL);
+	else
+		tpm2_ReadPublic(tssContext, authHandle, NULL, TPM_RH_NULL, NULL);
+
+	rc = tpm2_StartAuthSession(tssContext, TPM_RH_NULL, authHandle,
+				   TPM_SE_HMAC, &symmetric, TPM_ALG_SHA256,
+				   &authSession, authVal);
+	if (rc)
+		return rc;
+
+	in.authHandle = authHandle;
+	in.policySession = policySession;
+	in.nonceTPM.b.size = 0;
+	in.cpHashA.b.size = 0;
+
+	in.policyRef.t = *policyRef;
+	in.expiration = 0;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_PolicySecret,
+			 authSession, authVal, 0,
+			 TPM_RH_NULL, NULL, 0);
+
+	if (rc) {
+		tpm2_FlushContext(tssContext, authSession);
+		tpm2_error(rc, "TPM2_PolicySecret");
+		return rc;
+	}
+
+	return rc;
+}
+
+static inline TPM_RC
 tpm2_PolicyGetDigest(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 		     DIGEST_2B *digest)
 {

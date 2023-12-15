@@ -71,6 +71,7 @@
 #define TPM_CC_PolicyCounterTimer	TPM2_CC_PolicyCounterTimer
 #define TPM_CC_PolicyAuthorize	TPM2_CC_PolicyAuthorize
 #define TPM_CC_PolicyLocality	TPM2_CC_PolicyLocality
+#define TPM_CC_PolicySecret	TPM2_CC_PolicySecret
 
 #define TPM_ST_HASHCHECK	TPM2_ST_HASHCHECK
 
@@ -1079,6 +1080,49 @@ tpm2_PolicyLocality(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 	return Esys_PolicyLocality(tssContext, policySession,
 				   ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
 				   locality);
+}
+
+static inline TPM_RC
+tpm2_PolicySecret(TSS_CONTEXT *tssContext, TPM_HANDLE authHandle,
+		  TPM_HANDLE policySession, DIGEST_2B *policyRef,
+		  const char *authVal)
+{
+	TPM_RC rc;
+	TPM_HANDLE authSession;
+	TPMT_SYM_DEF symmetric;
+
+	/*
+	 * Simple use case: we take a bound session inside this
+	 * function because we know the auth and we have an object
+	 * handle.  In theory the caller should pass in the session,
+	 * but all current callers would flush the handle immediately
+	 * after so it simplifies the API to do the session setup and
+	 * teardown inside this call.
+	 */
+
+	symmetric.algorithm = TPM_ALG_AES;
+	symmetric.keyBits.aes = 128;
+	symmetric.mode.aes = TPM_ALG_CFB;
+
+
+	rc = tpm2_StartAuthSession(tssContext, TPM_RH_NULL, authHandle,
+				   TPM_SE_HMAC, &symmetric, TPM_ALG_SHA256,
+				   &authSession, authVal);
+	if (rc)
+		return rc;
+
+	intel_auth_helper(tssContext, authHandle, authVal);
+	intel_sess_helper(tssContext, authSession, 0);
+
+	rc = Esys_PolicySecret(tssContext, authHandle, policySession,
+			       authSession, ESYS_TR_NONE, ESYS_TR_NONE,
+			       NULL /* nonceTPM */, NULL /* cpHashA */,
+			       policyRef, 0, NULL, NULL);
+
+	if (rc)
+		tpm2_FlushContext(tssContext, authSession);
+
+	return rc;
 }
 
 static inline TPM_RC
