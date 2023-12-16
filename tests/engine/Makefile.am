@@ -28,6 +28,7 @@ TESTS += ../check_curves.sh \
 	../seal_unseal.sh \
 	../check_signed_policies.sh \
 	../check_locality.sh \
+	../check_secret_policies.sh \
 	../dynamic_engine.sh \
 	../stop_sw_tpm.sh
 
