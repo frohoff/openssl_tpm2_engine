@@ -330,6 +330,25 @@ An alternate method (rfc include) is described in the references.
 	    policySignature.
 	  </t>
 	</section>
+	<section title="TPM2_PolicySecret">
+	  <t>
+	    According to <xref target="TPM2.0"/> the body of this
+	    command consists of the handle of the authorizing object,
+	    TPM2B_NONCE nonceTPM, TPM2B_DIGEST cpHashA, TPM2B_NONCE
+	    policyRef and INT32 expiration.  However, the policyHash
+	    only uses policyRef and the name of the authorizing
+	    object.  Since the usual authorizing object for
+	    TPM2_PolicySecret is a permanent handle or NV Index, and
+	    those are hard to find by name, the handle is also given
+	    as an optional hint in addition to the name.
+	  </t>
+	  <t>
+	    The format of CommandPolicy for TPM2_PolicySecret MUST be
+	    TPM_HANDLE objectHandleHint, TPM2B_NAME objectName,
+	    TPM2B_DIGEST policyRef.  Where objectHandleHint MAY be
+	    zero to indicate no hint.
+	  </t>
+	</section>
       </section>
       <section title="Policy Implementation Considerations">
 	<t>
@@ -364,16 +383,25 @@ An alternate method (rfc include) is described in the references.
 	<section title="Authorization Policy">
 	  <t>
 	    When Authorization (Passing in a password) is required,
-	    the emptyAuth parameter MUST be absent or set to false
-	    and additionally the TPM_CC_PolicyAuthValue MUST be
-	    specified as the command code for one entry in the
-	    TPMPolicy sequence.  However, the implementation MAY
-	    choose to execute either TPM2_PolicyPassword for TPM_RS_PW
-	    or TPM2_PolicyAuthValue for HMAC based authorization
-	    depending on whether the command being authorized is using
-	    sessions or not.  If the policy does not require an
-	    authorization then the emptyAuth parameter MUST be set to
-	    true.
+	    the emptyAuth parameter MUST be absent or set to false and
+	    additionally TPM_CC_PolicyAuthValue or TPM_CC_PolicySecret
+	    MUST be specified as the command code for one entry in the
+	    TPMPolicy sequence.  However, when TPM2_PolicyAuthValue is
+	    specified, the implementation MAY choose to execute either
+	    TPM2_PolicyPassword for TPM_RS_PW or TPM2_PolicyAuthValue
+	    for HMAC based authorization depending on whether the
+	    command being authorized is using sessions or not.  If the
+	    policy does not require an authorization then the
+	    emptyAuth parameter MUST be set to true.
+	  </t>
+	  <t>
+	    Implementations should bear in mind that most crypto
+	    systems with key management expect to consume only one
+	    password per key, so implementations SHOULD avoid policy
+	    chains which would require more than one password as would
+	    happen when TPM2_PolicySecret and TPM2_PolicyAuthValue
+	    both appear in the same policy chain.  Implementations MAY
+	    detect and emit an error in this case.
 	  </t>
 	</section>
       </section>
