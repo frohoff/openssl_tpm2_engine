@@ -2652,13 +2652,13 @@ static void update_pcrs(TPML_PCR_SELECTION *pcrs, int bank, char *str)
 
 	if (sep)
 		*sep = '\0';
-	from = to = strtol(str, &endptr, 10);
+	from = to = strtoul(str, &endptr, 10);
 	if (*endptr != '\0' || from < 0 || from >= MAX_TPM_PCRS)
 		goto err;
 
 	if (sep) {
 		str = sep + 1;
-		to = strtol(str, &endptr, 10);
+		to = strtoul(str, &endptr, 10);
 
 		if (*endptr != '\0' || to < 0 || to >= MAX_TPM_PCRS)
 			goto err;

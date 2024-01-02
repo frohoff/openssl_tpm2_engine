@@ -585,10 +585,10 @@ int main(int argc, char **argv)
 				break;
 			case OPT_LOCALITY:
 				has_locality = 1;
-				locality = strtol(optarg, NULL, 0);
+				locality = strtoul(optarg, NULL, 0);
 				break;
 			case OPT_SECRET:
-				secret_handle = strtol(optarg, NULL, 0);
+				secret_handle = strtoul(optarg, NULL, 0);
 				has_policy = 1;
 				break;
 			default:
