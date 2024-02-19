@@ -2988,9 +2988,6 @@ void tpm2_public_template_ecc(TPMT_PUBLIC *pub, TPMI_ECC_CURVE curve)
 {
 	pub->type = TPM_ALG_ECC;
 	pub->nameAlg = name_alg;
-	/* note: all our keys are decrypt only.  This is because
-	 * we use the TPM2_RSA_Decrypt operation for both signing
-	 * and decryption (see e_tpm2.c for details) */
 	VAL(pub->objectAttributes) =
 		TPMA_OBJECT_SIGN |
 		TPMA_OBJECT_DECRYPT |
