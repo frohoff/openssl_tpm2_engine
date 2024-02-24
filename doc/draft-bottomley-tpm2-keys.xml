@@ -108,6 +108,7 @@ An alternate method (rfc include) is described in the references.
     policy      [1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL,
     secret      [2] EXPLICIT OCTET STRING OPTIONAL,
     authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL,
+    description [4] EXPLICIT UTF8String OPTIONAL,
     parent      INTEGER,
     pubkey      OCTET STRING,
     privkey     OCTET STRING
@@ -195,6 +196,13 @@ An alternate method (rfc include) is described in the references.
 	    The forms of the authPolicy statement are described in
 	    <xref target="signed-policy"/>.  If the TPM key
 	    has no policy hash then this MUST NOT be present.
+	  </t>
+	</section>
+	<section title="description">
+	  <t>
+	    An optional string description for the key which is
+	    only used for display purposes, MAY be used as a user
+	    visible mnemonic for the key.
 	  </t>
 	</section>
 	<section title="parent">
@@ -768,6 +776,7 @@ An alternate method (rfc include) is described in the references.
    policy      [1] EXPLICIT SEQUENCE OF TPMPolicy OPTIONAL,
    secret      [2] EXPLICIT OCTET STRING OPTIONAL,
    authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL,
+   description [4] EXPLICIT UTF8String OPTIONAL,
    parent      INTEGER,
    pubkey      OCTET STRING,
    privkey     OCTET STRING
