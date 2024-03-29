@@ -109,6 +109,7 @@ An alternate method (rfc include) is described in the references.
     secret      [2] EXPLICIT OCTET STRING OPTIONAL,
     authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL,
     description [4] EXPLICIT UTF8String OPTIONAL,
+    rsaParent   [5] EXPLICIT BOOLEAN OPTIONAL,
     parent      INTEGER,
     pubkey      OCTET STRING,
     privkey     OCTET STRING
@@ -205,6 +206,17 @@ An alternate method (rfc include) is described in the references.
 	    visible mnemonic for the key.
 	  </t>
 	</section>
+	<section title="rsaParent">
+	  <t>
+	    This MUST be present and true if the parent is a permanent
+	    handle (MSO 0x40) and RSA 2048 is used for the primary key.
+	    If the parent is not a permanent handle then this MUST NOT
+	    be present. If the parent is a permanent handle and if
+	    P-256 is used for the primary then this MUST NOT be present.
+	    Given that P-256 primary keys are easier to generate,
+	    implementations SHOULD NOT set this flag.
+	  </t>
+	</section>
 	<section title="parent">
 	  <t>
 	    This MUST be present for all keys and specifies the handle
@@ -221,7 +233,9 @@ An alternate method (rfc include) is described in the references.
 	     using the TCG specified Elliptic Curve template <xref
 	     target="TCG-Provision"/> (section 7.5.1 for the Storage
 	     and other seeds or 7.4.1 for the endorsement seed) for
-	     the NIST P-256 curve and use the primary key so generated
+	     the NIST P-256 curve if rsaParent is absent or the RSA
+	     template with a key length of 2048 if rsaParent is
+	     present and true and use the primary key so generated
 	     as the parent.
 	  </t>
 	</section>
@@ -777,6 +791,7 @@ An alternate method (rfc include) is described in the references.
    secret      [2] EXPLICIT OCTET STRING OPTIONAL,
    authPolicy  [3] EXPLICIT SEQUENCE OF TPMAuthPolicy OPTIONAL,
    description [4] EXPLICIT UTF8String OPTIONAL,
+   rsaParent   [5] EXPLICIT BOOLEAN OPTIONAL,
    parent      INTEGER,
    pubkey      OCTET STRING,
    privkey     OCTET STRING
