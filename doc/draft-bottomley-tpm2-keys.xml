@@ -232,11 +232,17 @@ An alternate method (rfc include) is described in the references.
 	     implementation MUST run TPM2_CreatePrimary on the handle
 	     using the TCG specified Elliptic Curve template <xref
 	     target="TCG-Provision"/> (section 7.5.1 for the Storage
-	     and other seeds or 7.4.1 for the endorsement seed) for
-	     the NIST P-256 curve if rsaParent is absent or the RSA
+	     and other seeds or 7.4.1 for the endorsement seed) which
+	     refers to the TCG EK Credential Profile <xref
+	     target="TCG-EK-Profile"/> .  Since there are several
+	     possible templates, implementations MUST always use the H
+	     template (the one with zero size unique fields).  The
+	     template used MUST be H-2 (EK Credential Profile section
+	     B.4.5) for the NIST P-256 curve if rsaParent is absent or
+	     the H-1 (EK Credential Profile section B.4.4) RSA
 	     template with a key length of 2048 if rsaParent is
-	     present and true and use the primary key so generated
-	     as the parent.
+	     present and true and use the primary key so generated as
+	     the parent.
 	  </t>
 	</section>
 	<section title="pubkey">
@@ -727,6 +733,16 @@ An alternate method (rfc include) is described in the references.
 	    <organization>Trusted Computing Group</organization>
 	  </author>
 	  <date year="2017" month="March" day="15"/>
+	</front>
+      </reference>
+      <reference anchor="TCG-EK-Profile" target="https://trustedcomputinggroup.org/resource/http-trustedcomputinggroup-org-wp-content-uploads-tcg-ek-credential-profile-v-2-5-r2_published-pdf/">
+	<front>
+	  <title>TCG EK Credential Profile For TPM Family 2.0; Level
+	  0</title>
+	  <author>
+	    <organization>Trusted Computing Group</organization>
+	  </author>
+	  <date year="2022" month="January" day="26"/>
 	</front>
       </reference>
     </references>
