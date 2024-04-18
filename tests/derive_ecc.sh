@@ -1,5 +1,5 @@
 #!/bin/bash
-
+. ../test-common.sh
 
 ##
 # test is to check that the key derivation works
@@ -23,7 +23,7 @@
 ##
 
 for curve in $(${bindir}/create_tpm2_key --list-curves); do
-    if openssl ecparam -name ${curve} 2>&1 | egrep '(invalid|unknown) curve'; then
+    if check_curve ${curve}; then
 	continue
     fi
     echo "Checking curve ${curve} explicitly named"

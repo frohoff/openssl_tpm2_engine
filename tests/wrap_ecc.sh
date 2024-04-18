@@ -1,5 +1,5 @@
 #!/bin/bash
-
+. ../test-common.sh
 
 ##
 # test is
@@ -8,7 +8,7 @@
 # 3. Create a self signed x509 certificate
 # 4. verify the certificate
 for curve in $(${bindir}/create_tpm2_key --list-curves); do
-    if openssl ecparam -name ${curve} 2>&1 | egrep '(unknown|invalid) curve'; then
+    if check_curve ${curve}; then
 	continue
     fi
     echo "Checking curve ${curve}"
@@ -20,7 +20,7 @@ for curve in $(${bindir}/create_tpm2_key --list-curves); do
     exit 1
 done
 for curve in $(${bindir}/create_tpm2_key --list-curves); do
-    if openssl ecparam -name ${curve} 2>&1 | egrep '(invalid|unknown) curve'; then
+    if check_curve ${curve}; then
 	continue
     fi
     echo "Checking curve ${curve}"
