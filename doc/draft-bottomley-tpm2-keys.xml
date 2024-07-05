@@ -174,19 +174,21 @@ An alternate method (rfc include) is described in the references.
 	</section>
 	<section title="secret">
 	  <t>
-	    This section describes the additional cryptographic
-	    secret used to specify the outer wrapping of an
-	    importable key.  It MUST be present for key type
-	    id-importablekey and MUST NOT be present for any other
-	    key type.
+	    This section describes the additional cryptographic secret
+	    used to specify the outer wrapping of an importable
+	    object.  For keys, it MUST be present for key type
+	    id-importablekey and MUST NOT be present for key type
+	    id-loadablekey.  For sealed data objects of type
+	    id-sealedkey, it MAY be present and if present indicates
+	    the object is importable.
 	  </t>
 	  <t>
-	    Importable keys (designed to be processed by TPM2_Import)
-	    MUST have an unencrypted inner wrapper (symmetricAlg MUST
-	    be TPM_ALG_NULL and encryptionKey MUST be empty) and an
-	    outer wrapper encrypted to the parent key using
-	    inSymSeed. The secret parameter is the fully marshalled
-	    TPM2B_ENCRYPTED_SECRET form of inSymSeed.
+	    Importable objects (designed to be processed by
+	    TPM2_Import) MUST have an unencrypted inner wrapper
+	    (symmetricAlg MUST be TPM_ALG_NULL and encryptionKey MUST
+	    be empty) and an outer wrapper encrypted to the parent key
+	    using inSymSeed. The secret parameter is the fully
+	    marshalled TPM2B_ENCRYPTED_SECRET form of inSymSeed.
 	  </t>
 	</section>
 	<section title="authPolicy">
