@@ -120,6 +120,11 @@ TPM_RC tpm2_new_signed_policy(char *tpmkey, char *policykey, char *engine,
 			      TSSAUTHPOLICY *ap, TPMT_HA *digest, int need_auth);
 TPM_RC tpm2_add_policy_secret(TSS_CONTEXT *tssContext, STACK_OF(TSSOPTPOLICY) *sk,
 			      TPM_HANDLE handle, TPMT_HA *digest);
+TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
+		     NAME_2B *name,
+		     const char *label,
+		     PRIVATE_2B *p, /* contains the to be encrypted data */
+		     ENCRYPTED_SECRET_2B *enc_secret);
 TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 		      TPMT_SENSITIVE *s,
 		      TPMT_PUBLIC *pub,

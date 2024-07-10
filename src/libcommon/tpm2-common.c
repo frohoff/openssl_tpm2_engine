@@ -3121,22 +3121,20 @@ TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey)
 	return TPM_RC_ASYMMETRIC;
 }
 
-TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
-		      TPMT_SENSITIVE *s,
-		      TPMT_PUBLIC *pub,
-		      PRIVATE_2B *p,
-		      ENCRYPTED_SECRET_2B *enc_secret)
+TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
+		     NAME_2B *name,
+		     const char *label,
+		     PRIVATE_2B *p, /* contains the to be encrypted data */
+		     ENCRYPTED_SECRET_2B *enc_secret)
 {
 	PRIVATE_2B secret, seed;
 	/*  amount of room in the buffer for the integrity TPM2B */
 	const int integrity_skip = SHA256_DIGEST_LENGTH + 2;
-	//	BYTE *integrity = p->buffer;
 	BYTE *sensitive = p->buffer + integrity_skip;
 	BYTE *buf;
-	TPM2B *t2b;
 	INT32 size;
 	size_t ssize;
-	UINT16 bsize, written = 0;
+	UINT16 written = 0;
 	EVP_PKEY *ephemeral = NULL;
 	EVP_PKEY_CTX *ctx;
 	TPM2B_ECC_POINT pub_pt, ephemeral_pt;
@@ -3146,13 +3144,11 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	/* hmac follows namealg, so set to max size */
 	KEY_2B hmackey;
 	TPMT_HA hmac;
-	NAME_2B name;
 	DIGEST_2B digest;
 	unsigned char null_iv[AES_128_BLOCK_SIZE_BYTES];
 	TPM2B null_2b;
 
 	null_2b.size = 0;
-
 	if (EVP_PKEY_type(EVP_PKEY_id(parent)) != EVP_PKEY_EC) {
 		printf("Can only currently wrap to EC parent\n");
 		return TPM_RC_ASYMMETRIC;
@@ -3160,18 +3156,6 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 
 	e_parent = EVP_PKEY_get1_EC_KEY(parent);
 	group = EC_KEY_get0_group(e_parent);
-
-	/* marshal the sensitive into a TPM2B */
-	t2b = (TPM2B *)sensitive;
-	buf = t2b->buffer;
-	size = sizeof(p->buffer) - integrity_skip;
-	bsize = 0;
-	TSS_TPMT_SENSITIVE_Marshal(s, &bsize, &buf, &size);
-	buf = (BYTE *)&t2b->size;
-	size = 2;
-	TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
-	/* set the total size of the private entity */
-	p->size = bsize + sizeof(UINT16) + integrity_skip;
 
 	/* compute the elliptic curve shared (and encrypted) secret */
 	ctx = EVP_PKEY_CTX_new(parent, NULL);
@@ -3216,15 +3200,14 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	/* now pass the secret through KDFe to get the shared secret
 	 * The size is the size of the parent name algorithm which we
 	 * assume to be sha256 */
-	TSS_KDFE(seed.buffer, TPM_ALG_SHA256, (TPM2B *)&secret, "DUPLICATE",
+	TSS_KDFE(seed.buffer, TPM_ALG_SHA256, (TPM2B *)&secret, label,
 		 (TPM2B *)&ephemeral_pt.point.x, (TPM2B *)&pub_pt.point.x,
 		 SHA256_DIGEST_LENGTH*8);
 	seed.size = SHA256_DIGEST_LENGTH;
 
 	/* and finally through KDFa to get the aes symmetric encryption key */
-	tpm2_ObjectPublic_GetName(&name, pub);
 	TSS_KDFA(aeskey, TPM_ALG_SHA256, (TPM2B *)&seed, "STORAGE",
-		 (TPM2B *)&name, &null_2b, T2_AES_KEY_BITS);
+		 (TPM2B *)name, &null_2b, T2_AES_KEY_BITS);
 	/* and then the outer HMAC key */
 	hmackey.size = SHA256_DIGEST_LENGTH;
 	TSS_KDFA(hmackey.buffer, TPM_ALG_SHA256, (TPM2B *)&seed, "INTEGRITY",
@@ -3242,7 +3225,7 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	hmac.hashAlg = TPM_ALG_SHA256;
 	TSS_HMAC_Generate(&hmac, (TPM2B_KEY *)&hmackey,
 			  p->size - integrity_skip, sensitive,
-			  name.size, name.name,
+			  name->size, name->name,
 			  0, NULL);
 	digest.size  = SHA256_DIGEST_LENGTH;
 	memcpy(digest.buffer, &hmac.digest, digest.size);
@@ -3254,6 +3237,38 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
  openssl_err:
 	ERR_print_errors_fp(stderr);
 	return TPM_RC_ASYMMETRIC;
+}
+
+TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
+		      TPMT_SENSITIVE *s,
+		      TPMT_PUBLIC *pub,
+		      PRIVATE_2B *p,
+		      ENCRYPTED_SECRET_2B *enc_secret)
+{
+	/*  amount of room in the buffer for the integrity TPM2B */
+	const int integrity_skip = SHA256_DIGEST_LENGTH + 2;
+	BYTE *sensitive = p->buffer + integrity_skip;
+	BYTE *buf;
+	TPM2B *t2b;
+	INT32 size;
+	UINT16 bsize, written = 0;
+	NAME_2B name;
+
+	/* marshal the sensitive into a TPM2B */
+	t2b = (TPM2B *)sensitive;
+	buf = t2b->buffer;
+	size = sizeof(p->buffer) - integrity_skip;
+	bsize = 0;
+	TSS_TPMT_SENSITIVE_Marshal(s, &bsize, &buf, &size);
+	buf = (BYTE *)&t2b->size;
+	size = 2;
+	TSS_UINT16_Marshal(&bsize, &written, &buf, &size);
+	/* set the total size of the private entity */
+	p->size = bsize + sizeof(UINT16) + integrity_skip;
+
+	tpm2_ObjectPublic_GetName(&name, pub);
+
+	return tpm2_hmacwrap(parent, &name, "DUPLICATE", p, enc_secret);
 }
 
 void
