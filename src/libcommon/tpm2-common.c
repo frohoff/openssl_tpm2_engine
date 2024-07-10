@@ -3121,38 +3121,21 @@ TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey)
 	return TPM_RC_ASYMMETRIC;
 }
 
-TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
-		     NAME_2B *name,
-		     const char *label,
-		     PRIVATE_2B *p, /* contains the to be encrypted data */
-		     ENCRYPTED_SECRET_2B *enc_secret)
+static TPM_RC tpm2_ecc_seed(EVP_PKEY *parent,
+			    const char *label,
+			    PRIVATE_2B *seed,
+			    ENCRYPTED_SECRET_2B *enc_secret)
 {
-	PRIVATE_2B secret, seed;
-	/*  amount of room in the buffer for the integrity TPM2B */
-	const int integrity_skip = SHA256_DIGEST_LENGTH + 2;
-	BYTE *sensitive = p->buffer + integrity_skip;
-	BYTE *buf;
-	INT32 size;
-	size_t ssize;
-	UINT16 written = 0;
+	PRIVATE_2B secret;
 	EVP_PKEY *ephemeral = NULL;
 	EVP_PKEY_CTX *ctx;
 	TPM2B_ECC_POINT pub_pt, ephemeral_pt;
 	EC_KEY *e_parent, *e_ephemeral;
 	const EC_GROUP *group;
-	unsigned char aeskey[T2_AES_KEY_BYTES];
-	/* hmac follows namealg, so set to max size */
-	KEY_2B hmackey;
-	TPMT_HA hmac;
-	DIGEST_2B digest;
-	unsigned char null_iv[AES_128_BLOCK_SIZE_BYTES];
-	TPM2B null_2b;
-
-	null_2b.size = 0;
-	if (EVP_PKEY_type(EVP_PKEY_id(parent)) != EVP_PKEY_EC) {
-		printf("Can only currently wrap to EC parent\n");
-		return TPM_RC_ASYMMETRIC;
-	}
+	BYTE *buf;
+	INT32 size;
+	size_t ssize;
+	UINT16 written;
 
 	e_parent = EVP_PKEY_get1_EC_KEY(parent);
 	group = EC_KEY_get0_group(e_parent);
@@ -3200,10 +3183,56 @@ TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
 	/* now pass the secret through KDFe to get the shared secret
 	 * The size is the size of the parent name algorithm which we
 	 * assume to be sha256 */
-	TSS_KDFE(seed.buffer, TPM_ALG_SHA256, (TPM2B *)&secret, label,
+	TSS_KDFE(seed->buffer, TPM_ALG_SHA256, (TPM2B *)&secret, label,
 		 (TPM2B *)&ephemeral_pt.point.x, (TPM2B *)&pub_pt.point.x,
 		 SHA256_DIGEST_LENGTH*8);
-	seed.size = SHA256_DIGEST_LENGTH;
+	seed->size = SHA256_DIGEST_LENGTH;
+
+	/* OK the ephermeral public point is now the encrypted secret */
+	size = sizeof(ephemeral_pt);
+	written = 0;
+	buf = enc_secret->secret;
+	TSS_TPMS_ECC_POINT_Marshal(&ephemeral_pt.point, &written,
+				   &buf, &size);
+	enc_secret->size = written;
+	return 0;
+
+ openssl_err:
+	ERR_print_errors_fp(stderr);
+	return TPM_RC_ASYMMETRIC;
+}
+
+TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
+		     NAME_2B *name,
+		     const char *label,
+		     PRIVATE_2B *p, /* contains the to be encrypted data */
+		     ENCRYPTED_SECRET_2B *enc_secret)
+{
+	PRIVATE_2B seed;
+	/*  amount of room in the buffer for the integrity TPM2B */
+	const int integrity_skip = SHA256_DIGEST_LENGTH + 2;
+	BYTE *sensitive = p->buffer + integrity_skip;
+	BYTE *buf;
+	INT32 size;
+	UINT16 written = 0;
+	unsigned char aeskey[T2_AES_KEY_BYTES];
+	/* hmac follows namealg, so set to max size */
+	KEY_2B hmackey;
+	TPMT_HA hmac;
+	DIGEST_2B digest;
+	unsigned char null_iv[AES_128_BLOCK_SIZE_BYTES];
+	TPM2B null_2b;
+	TPM_RC rc;
+
+	null_2b.size = 0;
+	if (EVP_PKEY_type(EVP_PKEY_id(parent)) == EVP_PKEY_EC) {
+		rc = tpm2_ecc_seed(parent, label, &seed, enc_secret);
+	} else {
+		printf("Can only currently wrap to EC parent\n");
+		rc = TPM_RC_ASYMMETRIC;
+	}
+	if (rc)
+		return rc;
 
 	/* and finally through KDFa to get the aes symmetric encryption key */
 	TSS_KDFA(aeskey, TPM_ALG_SHA256, (TPM2B *)&seed, "STORAGE",
@@ -3212,13 +3241,6 @@ TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
 	hmackey.size = SHA256_DIGEST_LENGTH;
 	TSS_KDFA(hmackey.buffer, TPM_ALG_SHA256, (TPM2B *)&seed, "INTEGRITY",
 		 &null_2b, &null_2b, SHA256_DIGEST_LENGTH*8);
-	/* OK the ephermeral public point is now the encrypted secret */
-	size = sizeof(ephemeral_pt);
-	written = 0;
-	buf = enc_secret->secret;
-	TSS_TPMS_ECC_POINT_Marshal(&ephemeral_pt.point, &written,
-				   &buf, &size);
-	enc_secret->size = written;
 	memset(null_iv, 0, sizeof(null_iv));
 	TSS_AES_EncryptCFB(sensitive, T2_AES_KEY_BITS, aeskey, null_iv,
 			   p->size - integrity_skip, sensitive);
@@ -3233,10 +3255,6 @@ TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
 	buf = p->buffer;
 	TSS_TPM2B_DIGEST_Marshal((TPM2B_DIGEST *)&digest, &written, &buf, &size);
 	return TPM_RC_SUCCESS;
-
- openssl_err:
-	ERR_print_errors_fp(stderr);
-	return TPM_RC_ASYMMETRIC;
 }
 
 TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
