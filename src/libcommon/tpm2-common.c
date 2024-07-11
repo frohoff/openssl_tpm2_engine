@@ -3121,6 +3121,57 @@ TPM_RC openssl_to_tpm_public(TPM2B_PUBLIC *pub, EVP_PKEY *pkey)
 	return TPM_RC_ASYMMETRIC;
 }
 
+static TPM_RC tpm2_rsa_seed(EVP_PKEY *parent,
+			    const char *label,
+			    PRIVATE_2B *seed,
+			    ENCRYPTED_SECRET_2B *enc_secret)
+{
+	EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(parent, NULL);
+	char *dup_label;
+	size_t size;
+
+	if (!ctx)
+		goto openssl_err;
+
+	if (EVP_PKEY_encrypt_init(ctx) != 1)
+		goto openssl_err;
+
+	if (EVP_PKEY_CTX_set_rsa_padding(ctx, RSA_PKCS1_OAEP_PADDING) != 1)
+		goto openssl_err;
+
+	dup_label = OPENSSL_strdup(label);
+	if (!label)
+		goto openssl_err;
+
+	if (EVP_PKEY_CTX_set0_rsa_oaep_label(ctx, dup_label,
+					     strlen(dup_label) + 1) != 1) {
+		OPENSSL_free(dup_label);
+		goto openssl_err;
+	}
+
+	if(EVP_PKEY_CTX_set_rsa_oaep_md(ctx, EVP_sha256()) != 1)
+		goto openssl_err;
+
+	/* initialize the seed with a random string */
+	seed->size = SHA256_DIGEST_LENGTH;
+	RAND_bytes(seed->buffer, seed->size);
+
+	size = sizeof(enc_secret->secret);
+	if (EVP_PKEY_encrypt(ctx, enc_secret->secret, &size,
+			     seed->buffer, seed->size) != 1)
+		goto openssl_err;
+	enc_secret->size = size;
+	EVP_PKEY_CTX_free(ctx);
+
+	return 0;
+
+ openssl_err:
+	ERR_print_errors_fp(stderr);
+	if (ctx)
+		EVP_PKEY_CTX_free(ctx);
+	return TPM_RC_ASYMMETRIC;
+}
+
 static TPM_RC tpm2_ecc_seed(EVP_PKEY *parent,
 			    const char *label,
 			    PRIVATE_2B *seed,
@@ -3225,11 +3276,19 @@ TPM_RC tpm2_hmacwrap(EVP_PKEY *parent,
 	TPM_RC rc;
 
 	null_2b.size = 0;
-	if (EVP_PKEY_type(EVP_PKEY_id(parent)) == EVP_PKEY_EC) {
+	switch (EVP_PKEY_type(EVP_PKEY_id(parent))) {
+	case EVP_PKEY_EC:
 		rc = tpm2_ecc_seed(parent, label, &seed, enc_secret);
-	} else {
+		break;
+
+	case EVP_PKEY_RSA:
+		rc = tpm2_rsa_seed(parent, label, &seed, enc_secret);
+		break;
+
+	default:
 		printf("Can only currently wrap to EC parent\n");
 		rc = TPM_RC_ASYMMETRIC;
+		break;
 	}
 	if (rc)
 		return rc;

@@ -724,12 +724,6 @@ int main(int argc, char **argv)
 			goto out_err;
 		}
 
-		/* FIXME: should do RSA as well, it's just more complex */
-		if (EVP_PKEY_type(EVP_PKEY_id(p_pkey)) != EVP_PKEY_EC) {
-			reason = "parent not EC key";
-			goto out_err;
-		}
-
 		rc = openssl_to_tpm_public(pub, pkey);
 		if (rc) {
 			reason = "openssl_to_tpm_public";
