@@ -78,4 +78,12 @@ for key in key.priv key1.priv; do
     openssl verify -CAfile tmp.crt -check_ss_sig tmp.crt || exit 1
 done
 
-exit 0
+##
+# Now add back the RSA storage parent: clearing the TPM will have
+# changed the storage seed and flushed it and it is needed to verify
+# RSA importable keys
+##
+tssclear -hi p || exit 1
+key=$(tsscreateprimary -hi o -st -rsa|sed 's/Handle //') && \
+tssevictcontrol -hi o -ho ${key} -hp 81000001 && \
+tssflushcontext -ha ${key}

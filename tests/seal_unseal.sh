@@ -59,6 +59,18 @@ for n in sha1 sha256 sha384; do
     ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm && exit 1
     tsspcrextend -ha 16 -ic aaa
     ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm | grep -q "${DATA}" || exit 1;
+    # check importable RSA (same data and policies)
+    prim=$(tsscreateprimary -hi o -st -rsa -opem srk.pub | sed 's/Handle //') || exit 1
+    tssflushcontext -ha $prim
+    TPM_INTERFACE_TYPE= echo $DATA | ${bindir}/seal_tpm2_data -n ${n} -a -k ${AUTH} --parent 81000001 --import srk.pub seal.tpm || exit 1;
+    ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm | grep -q "${DATA}" || exit 1;
+    rm seal.tpm
+
+    TPM_INTERFACE_TYPE= echo $DATA | ${bindir}/seal_tpm2_data -n ${n} --import srk.pub --parent 81000001 --policy ${POLICYFILE} seal.tpm || exit 1;
+    tsspcrreset -ha 16
+    ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm && exit 1
+    tsspcrextend -ha 16 -ic aaa
+    ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm | grep -q "${DATA}" || exit 1;
 done
 
 exit 0
