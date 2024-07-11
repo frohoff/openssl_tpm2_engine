@@ -2247,9 +2247,14 @@ int tpm2_write_tpmfile(const char *file, BYTE *pubkey, int pubkey_len,
 		}
 
 		if (secret) {
+			BYTE buf[2048];
+			BYTE *buffer = buf;
+			INT32 size = sizeof(buf);
+			UINT16 written = 0;
+
+			TSS_TPM2B_ENCRYPTED_SECRET_Marshal((TPM2B_ENCRYPTED_SECRET *)secret, &written, &buffer, &size);
 			k.tpk.secret = ASN1_OCTET_STRING_new();
-			ASN1_STRING_set(k.tpk.secret, secret->secret,
-					secret->size);
+			ASN1_STRING_set(k.tpk.secret, buf, written);
 		}
 
 		/* standard requires true or not present */
@@ -3228,8 +3233,8 @@ TPM_RC tpm2_outerwrap(EVP_PKEY *parent,
 	size = sizeof(ephemeral_pt);
 	written = 0;
 	buf = enc_secret->secret;
-	TSS_TPM2B_ECC_POINT_Marshal(&ephemeral_pt, &written,
-				    &buf, &size);
+	TSS_TPMS_ECC_POINT_Marshal(&ephemeral_pt.point, &written,
+				   &buf, &size);
 	enc_secret->size = written;
 	memset(null_iv, 0, sizeof(null_iv));
 	TSS_AES_EncryptCFB(sensitive, T2_AES_KEY_BITS, aeskey, null_iv,
