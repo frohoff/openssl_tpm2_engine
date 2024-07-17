@@ -2320,6 +2320,14 @@ int hex2bin(unsigned char *dst, const char *src, size_t count)
 	return 0;
 }
 
+void bin2hex(char *dst, const unsigned char *src, size_t count)
+{
+	int i;
+
+	for (i = 0; i < count; i++)
+		sprintf(&dst[i<<1], "%02x", src[i]);
+}
+
 TPM_RC tpm2_parse_policy_file(const char *policy_file,
 			      STACK_OF(TSSOPTPOLICY) *sk,
 			      char *auth, TPMT_HA *digest)
@@ -3374,6 +3382,14 @@ openssl_print_errors()
 	ERR_load_ERR_strings();
 	ERR_load_crypto_strings();
 	ERR_print_errors_fp(stderr);
+}
+
+void tpm2_get_hexname(char hexname[MAX_HEXNAME], TPM2B_PUBLIC *pub)
+{
+	NAME_2B n;
+
+	tpm2_ObjectPublic_GetName(&n, &pub->publicArea);
+	bin2hex(hexname, (unsigned char *)n.name, n.size);
 }
 
 IMPLEMENT_ASN1_FUNCTIONS(TSSOPTPOLICY)

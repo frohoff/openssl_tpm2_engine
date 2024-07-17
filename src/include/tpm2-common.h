@@ -9,6 +9,9 @@
  * not a TPM error, so don't process the rc as one */
 #define NOT_TPM_ERROR (0xffffffff)
 
+/* maximum space for a sha256 name in ascii */
+#define MAX_HEXNAME 132
+
 extern TPM_ALG_ID name_alg;
 
 struct policy_command {
@@ -141,4 +144,6 @@ int tpm2_rsa_decrypt(const struct app_data *ad, PUBLIC_KEY_RSA_2B *cipherText,
 		     char *srk_auth);
 int tpm2_rm_signed_policy(char *tpmkey, int rmnum);
 int tpm2_get_signed_policy(char *tpmkey, STACK_OF(TSSAUTHPOLICY) **sk);
+void bin2hex(char *dst, const unsigned char *src, size_t count);
+void tpm2_get_hexname(char hexname[MAX_HEXNAME], TPM2B_PUBLIC *pub);
 #endif
