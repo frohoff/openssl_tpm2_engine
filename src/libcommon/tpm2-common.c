@@ -743,17 +743,30 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 		TPMA_OBJECT_NODA |
 		TPMA_OBJECT_SENSITIVEDATAORIGIN |
 		TPMA_OBJECT_USERWITHAUTH |
-		TPMA_OBJECT_DECRYPT |
 		TPMA_OBJECT_RESTRICTED;
+	if (type == TPM2_SIGNING)
+		VAL(inPublic.publicArea.objectAttributes) |=
+			TPMA_OBJECT_SIGN;
+	else
+		VAL(inPublic.publicArea.objectAttributes) |=
+			TPMA_OBJECT_DECRYPT;
 	if (type != TPM2_LEGACY)
 		VAL(inPublic.publicArea.objectAttributes) |=
 			TPMA_OBJECT_FIXEDPARENT |
 			TPMA_OBJECT_FIXEDTPM;
 
-	inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
-	inPublic.publicArea.parameters.eccDetail.symmetric.keyBits.aes = 128;
-	inPublic.publicArea.parameters.eccDetail.symmetric.mode.aes = TPM_ALG_CFB;
-	inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_NULL;
+	if (type != TPM2_SIGNING) {
+		inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_AES;
+		inPublic.publicArea.parameters.eccDetail.symmetric.keyBits.aes = 128;
+		inPublic.publicArea.parameters.eccDetail.symmetric.mode.aes = TPM_ALG_CFB;
+		inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_NULL;
+	} else {
+		inPublic.publicArea.parameters.eccDetail.symmetric.algorithm = TPM_ALG_NULL;
+		inPublic.publicArea.parameters.eccDetail.symmetric.keyBits.aes = 0;
+		inPublic.publicArea.parameters.eccDetail.symmetric.mode.aes = TPM_ALG_NULL;
+		inPublic.publicArea.parameters.eccDetail.scheme.scheme = TPM_ALG_ECDSA;
+		inPublic.publicArea.parameters.eccDetail.scheme.details.ecdsa.hashAlg = TPM_ALG_SHA256;
+	}
 	inPublic.publicArea.parameters.eccDetail.curveID = TPM_ECC_NIST_P256;
 	inPublic.publicArea.parameters.eccDetail.kdf.scheme = TPM_ALG_NULL;
 

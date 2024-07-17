@@ -23,6 +23,7 @@ enum tpm2_type {
 	TPM2_LOADABLE = 1,
 	TPM2_IMPORTABLE = 2,
 	TPM2_SEALED = 3,
+	TPM2_SIGNING = 4,
 };
 
 struct policies {
