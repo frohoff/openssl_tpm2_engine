@@ -16,6 +16,7 @@
 #define VAL(X)			X.val
 #define VAL_2B(X, MEMBER)	X.b.MEMBER
 #define VAL_2B_P(X, MEMBER)	X->b.MEMBER
+#define VAL_T(X, MEMBER)	X.t.MEMBER
 
 static inline void
 tpm2_error(TPM_RC rc, const char *reason)
@@ -696,6 +697,26 @@ tpm2_PolicySecret(TSS_CONTEXT *tssContext, TPM_HANDLE authHandle,
 }
 
 static inline TPM_RC
+tpm2_PolicyOR(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+	      TPML_DIGEST *pHashList)
+{
+	PolicyOR_In in;
+	TPM_RC rc;
+
+	in.policySession = policySession;
+	in.pHashList = *pHashList;
+
+	rc = TSS_Execute(tssContext,
+			 NULL,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_PolicyOR,
+			 TPM_RH_NULL, NULL, 0);
+
+	return rc;
+}
+
+static inline TPM_RC
 tpm2_PolicyGetDigest(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 		     DIGEST_2B *digest)
 {
@@ -739,6 +760,69 @@ tpm2_PCR_Read(TSS_CONTEXT *tssContext, TPML_PCR_SELECTION *pcrSelectionIn,
 
 	*pcrSelectionOut = out.pcrSelectionOut;
 	*pcrValues = out.pcrValues;
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_Certify(TSS_CONTEXT *tssContext, TPM_HANDLE objectHandle,
+	     TPM_HANDLE signHandle, DATA_2B *qualifyingData,
+	     ATTEST_2B *certifyInfo, TPMT_SIGNATURE *signature)
+{
+	Certify_In in;
+	Certify_Out out;
+	TPM_RC rc;
+
+	in.objectHandle = objectHandle;
+	in.signHandle = signHandle;
+	in.qualifyingData.t = *qualifyingData;
+	in.inScheme.scheme = TPM_ALG_NULL;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_Certify,
+			 TPM_RS_PW, NULL, 0,
+			 TPM_RS_PW, NULL, 0,
+			 TPM_RH_NULL, NULL, 0);
+
+	if (rc)
+		return rc;
+
+	*certifyInfo = out.certifyInfo.t;
+	*signature = out.signature;
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_ActivateCredential(TSS_CONTEXT *tssContext, TPM_HANDLE activateHandle,
+			TPM_HANDLE keyHandle, ID_OBJECT_2B *credentialBlob,
+			ENCRYPTED_SECRET_2B *secret, DIGEST_2B *certinfo,
+			TPM_HANDLE auth)
+{
+	ActivateCredential_In in;
+	ActivateCredential_Out out;
+	TPM_RC rc;
+
+	in.activateHandle = activateHandle;
+	in.keyHandle = keyHandle;
+	in.credentialBlob.t = *credentialBlob;
+	in.secret.t = *secret;
+
+	rc = TSS_Execute(tssContext,
+			 (RESPONSE_PARAMETERS *)&out,
+			 (COMMAND_PARAMETERS *)&in,
+			 NULL,
+			 TPM_CC_ActivateCredential,
+			 TPM_RS_PW, NULL, 0,
+			 auth, NULL, TPMA_SESSION_ENCRYPT,
+			 TPM_RH_NULL, NULL, 0);
+	if (rc)
+		return rc;
+
+	*certinfo = out.certInfo.t;
 
 	return rc;
 }

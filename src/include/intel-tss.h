@@ -74,6 +74,7 @@
 #define TPM_CC_PolicySecret	TPM2_CC_PolicySecret
 
 #define TPM_ST_HASHCHECK	TPM2_ST_HASHCHECK
+#define TPM_ST_ATTEST_CERTIFY	TPM2_ST_ATTEST_CERTIFY
 
 #define TPM_RH_OWNER		ESYS_TR_RH_OWNER
 #define TPM_RH_PLATFORM		ESYS_TR_RH_PLATFORM
@@ -131,6 +132,7 @@
 
 /* Intel and IBM have slightly different names for all the 2B structures */
 
+#define ATTEST_2B		TPM2B_ATTEST
 #define NAME_2B			TPM2B_NAME
 #define DATA_2B			TPM2B_DATA
 #define PRIVATE_2B		TPM2B_PRIVATE
@@ -138,6 +140,7 @@
 #define KEY_2B			TPM2B_KEY
 #define TPM2B_KEY		TPM2B_DATA
 #define DIGEST_2B		TPM2B_DIGEST
+#define ID_OBJECT_2B		TPM2B_ID_OBJECT
 #define ECC_PARAMETER_2B	TPM2B_ECC_PARAMETER
 #define SENSITIVE_DATA_2B	TPM2B_SENSITIVE_DATA
 #define PUBLIC_KEY_RSA_2B	TPM2B_PUBLIC_KEY_RSA
@@ -196,8 +199,11 @@ TSS_CONVERT_MARSHAL(TPM2B_PRIVATE, )
 TSS_CONVERT_MARSHAL(TPML_PCR_SELECTION, )
 TSS_CONVERT_MARSHAL(TPMT_SIGNATURE, )
 TSS_CONVERT_MARSHAL(UINT32, *)
+#define Tss2_MU_TPM_HANDLE_Marshal Tss2_MU_TPM2_HANDLE_Marshal
+TSS_CONVERT_MARSHAL(TPM_HANDLE, *)
 #define TSS_TPM_CC_Marshal TSS_UINT32_Marshal
 
+TSS_CONVERT_UNMARSHAL(TPMS_ATTEST, )
 TSS_CONVERT_UNMARSHAL(TPML_PCR_SELECTION, )
 TSS_CONVERT_UNMARSHAL(TPM2B_PRIVATE, )
 TSS_CONVERT_UNMARSHAL(TPM2B_PUBLIC, X)
@@ -218,6 +224,7 @@ TSS_CONVERT_UNMARSHAL(TPMT_SIGNATURE, X)
 #define VAL(X) X
 #define VAL_2B(X, MEMBER) X.MEMBER
 #define VAL_2B_P(X, MEMBER) X->MEMBER
+#define VAL_T(X, MEMBER) X.MEMBER
 
 static const struct {
 	TPM_ALG_ID alg;
@@ -409,7 +416,6 @@ TSS_HMAC_Generate(TPMT_HA *digest, const TPM2B_KEY *hmacKey, ...)
 		OSSL_PARAM_construct_utf8_string("digest", TSS_GetDigestName(digest->hashAlg), 0),
 		OSSL_PARAM_construct_end()
 	};
-	fprintf(stderr, "HMAC\n");
 #endif
 	int length;
 	uint8_t *buffer;
@@ -1125,6 +1131,15 @@ tpm2_PolicySecret(TSS_CONTEXT *tssContext, TPM_HANDLE authHandle,
 }
 
 static inline TPM_RC
+tpm2_PolicyOR(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
+	      TPML_DIGEST *pHashList)
+{
+	return Esys_PolicyOR(tssContext, policySession,
+			     ESYS_TR_NONE, ESYS_TR_NONE, ESYS_TR_NONE,
+			     pHashList);
+}
+
+static inline TPM_RC
 tpm2_PolicyGetDigest(TSS_CONTEXT *tssContext, TPM_HANDLE policySession,
 		     DIGEST_2B *digest)
 {
@@ -1187,6 +1202,66 @@ tpm2_PCR_Read(TSS_CONTEXT *tssContext, TPML_PCR_SELECTION *pcrSelectionIn,
 
 	*pcrSelectionOut = *out;
 	*pcrValues = *val;
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_Certify(TSS_CONTEXT *tssContext, TPM_HANDLE objectHandle,
+	     TPM_HANDLE signHandle, DATA_2B *qualifyingData,
+	     ATTEST_2B *certifyInfo, TPMT_SIGNATURE *signature)
+{
+	TPM_RC rc;
+	TPMT_SIG_SCHEME inScheme;
+	ATTEST_2B *a;
+	TPMT_SIGNATURE *s;
+	TPM2B_AUTH auth;
+
+	inScheme.scheme = TPM_ALG_NULL;
+
+	auth.size = 0;
+	Esys_TR_SetAuth(tssContext, objectHandle, &auth);
+	Esys_TR_SetAuth(tssContext, signHandle, &auth);
+
+	rc = Esys_Certify(tssContext, objectHandle, signHandle,
+			  ESYS_TR_PASSWORD, ESYS_TR_PASSWORD,
+			  ESYS_TR_NONE, qualifyingData, &inScheme,
+			  &a, &s);
+	if (rc)
+		return rc;
+
+	*certifyInfo = *a;
+	*signature = *s;
+
+	free(a);
+	free(s);
+
+	return rc;
+}
+
+static inline TPM_RC
+tpm2_ActivateCredential(TSS_CONTEXT *tssContext, TPM_HANDLE activateHandle,
+			TPM_HANDLE keyHandle,
+			const ID_OBJECT_2B *credentialBlob,
+			const ENCRYPTED_SECRET_2B *secret, DIGEST_2B *certinfo,
+			TPM_HANDLE authHandle)
+{
+	TPM_RC rc;
+	DIGEST_2B *cinfo;
+	TPM2B_AUTH auth;
+
+	auth.size = 0;
+	Esys_TR_SetAuth(tssContext, activateHandle, &auth);
+	Esys_TR_SetAuth(tssContext, keyHandle, &auth);
+	intel_sess_helper(tssContext, authHandle, TPMA_SESSION_ENCRYPT);
+	rc = Esys_ActivateCredential(tssContext, activateHandle, keyHandle,
+				     ESYS_TR_PASSWORD, authHandle, ESYS_TR_NONE,
+				     credentialBlob, secret, &cinfo);
+	if (rc)
+		return rc;
+
+	*certinfo = *cinfo;
+	free(cinfo);
 
 	return rc;
 }
