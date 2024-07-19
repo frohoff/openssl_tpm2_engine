@@ -661,7 +661,7 @@ tpm2_PolicySecret(TSS_CONTEXT *tssContext, TPM_HANDLE authHandle,
 	/* need public area pulled in for nonce computation */
 	if ((authHandle >> 24) == TPM_HT_NV_INDEX)
 		tpm2_NV_ReadPublic(tssContext, authHandle, NULL);
-	else
+	else if ((authHandle >> 24) != TPM_HT_PERMANENT)
 		tpm2_ReadPublic(tssContext, authHandle, NULL, TPM_RH_NULL, NULL);
 
 	rc = tpm2_StartAuthSession(tssContext, TPM_RH_NULL, authHandle,
