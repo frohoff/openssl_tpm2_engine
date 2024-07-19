@@ -717,13 +717,12 @@ TPM_RC tpm2_ObjectPublic_GetName(NAME_2B *name,
 	return rc;
 }
 
-TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
-		     TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy,
-		     enum tpm2_type type)
+TPM_RC tpm2_load_srk_tmpl(TSS_CONTEXT *tssContext, TPM_HANDLE *h,
+			  const char *auth, TPM2B_PUBLIC *tmpl,
+			  TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy)
 {
 	TPM_RC rc;
 	TPM2B_SENSITIVE_CREATE inSensitive;
-	TPM2B_PUBLIC inPublic;
 	TPM_HANDLE session = TPM_RS_PW;
 
 	if (auth) {
@@ -736,7 +735,33 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 	/* no sensitive date for storage keys */
 	VAL_2B(inSensitive.sensitive.data, size) = 0;
 
-	/* public parameters for an RSA2048 key  */
+	/* use a bound session here because we have no known key objects
+	 * to encrypt a salt to */
+	if (auth) {
+		rc = tpm2_get_bound_handle(tssContext, &session, hierarchy, auth);
+		if (rc)
+			return rc;
+	}
+
+	rc = tpm2_CreatePrimary(tssContext, hierarchy, &inSensitive, tmpl,
+				h, pub, session, auth);
+
+	if (rc) {
+		tpm2_error(rc, "TSS_CreatePrimary");
+		if (session != TPM_RS_PW)
+			tpm2_flush_handle(tssContext, session);
+	}
+
+	return rc;
+}
+
+TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
+		     TPM2B_PUBLIC *pub, TPM_HANDLE hierarchy,
+		     enum tpm2_type type)
+{
+	TPM2B_PUBLIC inPublic;
+
+	/* public parameters for a P-256 key  */
 	inPublic.publicArea.type = TPM_ALG_ECC;
 	inPublic.publicArea.nameAlg = TPM_ALG_SHA256;
 	VAL(inPublic.publicArea.objectAttributes) =
@@ -774,24 +799,7 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 	VAL_2B(inPublic.publicArea.unique.ecc.y, size) = 0;
 	VAL_2B(inPublic.publicArea.authPolicy, size) = 0;
 
-	/* use a bound session here because we have no known key objects
-	 * to encrypt a salt to */
-	if (auth) {
-		rc = tpm2_get_bound_handle(tssContext, &session, hierarchy, auth);
-		if (rc)
-			return rc;
-	}
-
-	rc = tpm2_CreatePrimary(tssContext, hierarchy, &inSensitive, &inPublic,
-				h, pub, session, auth);
-
-	if (rc) {
-		tpm2_error(rc, "TSS_CreatePrimary");
-		if (session != TPM_RS_PW)
-			tpm2_flush_handle(tssContext, session);
-	}
-
-	return rc;
+	return tpm2_load_srk_tmpl(tssContext, h, auth, &inPublic, pub, hierarchy);
 }
 
 void tpm2_flush_srk(TSS_CONTEXT *tssContext, TPM_HANDLE hSRK)
