@@ -990,8 +990,11 @@ static TPM_RC tpm2_readname(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
 		return tpm2_ReadPublic(tssContext, handle, NULL, TPM_RH_NULL, name);
 }
 
-TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
-			     TPM_HANDLE bind, const char *auth)
+static TPM_RC _get_session_internal(TSS_CONTEXT *tssContext,
+				    TPM_HANDLE *handle,
+				    TPM_HANDLE salt_key,
+				    TPM_HANDLE bind, TPM_SE sessionType,
+				    TPM_ALG_ID name_alg, const char *auth)
 {
 	TPM_RC rc;
 	TPMT_SYM_DEF symmetric;
@@ -1000,9 +1003,9 @@ TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	symmetric.keyBits.aes = 128;
 	symmetric.mode.aes = TPM_ALG_CFB;
 
-	rc = tpm2_StartAuthSession(tssContext, TPM_RH_NULL, bind,
-				   TPM_SE_HMAC, &symmetric,
-				   TPM_ALG_SHA256, handle, auth);
+	rc = tpm2_StartAuthSession(tssContext, salt_key, bind,
+				   sessionType, &symmetric,
+				   name_alg, handle, auth);
 	if (rc)
 		tpm2_error(rc, "TPM2_StartAuthSession");
 
@@ -1010,29 +1013,25 @@ TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 	return rc;
 }
 
+TPM_RC tpm2_get_bound_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
+			     TPM_HANDLE bind, const char *auth)
+{
+	return _get_session_internal(tssContext, handle, TPM_RH_NULL,
+				     bind, TPM_SE_HMAC, TPM_ALG_SHA256,
+				     auth);
+}
+
 TPM_RC tpm2_get_session_handle(TSS_CONTEXT *tssContext, TPM_HANDLE *handle,
 			       TPM_HANDLE salt_key, TPM_SE sessionType,
 			       TPM_ALG_ID name_alg)
 {
-	TPM_RC rc;
-	TPMT_SYM_DEF symmetric;
-
 	/* 0 means no key, which we express as TPM_RH_NULL to the TSS */
 	if (!salt_key)
 		salt_key = TPM_RH_NULL;
 
-	symmetric.algorithm = TPM_ALG_AES;
-	symmetric.keyBits.aes = 128;
-	symmetric.mode.aes = TPM_ALG_CFB;
-
-	rc = tpm2_StartAuthSession(tssContext, salt_key, TPM_RH_NULL,
-				   sessionType, &symmetric, name_alg,
-				   handle, NULL);
-
-	if (rc)
-		tpm2_error(rc, "TPM2_StartAuthSession");
-
-	return rc;
+	return _get_session_internal(tssContext, handle, salt_key,
+				     TPM_RH_NULL, sessionType, name_alg,
+				     NULL);
 }
 
 static TPM_RC tpm2_try_policy(TSS_CONTEXT *tssContext, TPM_HANDLE handle,
