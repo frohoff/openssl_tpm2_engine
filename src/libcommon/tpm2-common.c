@@ -1001,14 +1001,19 @@ static TPM_RC _get_session_internal(TSS_CONTEXT *tssContext,
 {
 	TPM_RC rc;
 	TPMT_SYM_DEF symmetric;
+	TPM_HANDLE sh = salt_key;
 
 	symmetric.algorithm = TPM_ALG_AES;
 	symmetric.keyBits.aes = 128;
 	symmetric.mode.aes = TPM_ALG_CFB;
 
-	rc = tpm2_StartAuthSession(tssContext, salt_key, bind,
+	if (sh == TPM_RH_NULL)
+		tpm2_load_srk(tssContext, &sh, NULL, NULL, sh, TPM2_LOADABLE);
+	rc = tpm2_StartAuthSession(tssContext, sh, bind,
 				   sessionType, &symmetric,
 				   name_alg, handle, auth);
+	if (sh != salt_key)
+		tpm2_FlushContext(tssContext, sh);
 	if (rc)
 		tpm2_error(rc, "TPM2_StartAuthSession");
 
