@@ -90,6 +90,8 @@
 #define TPM_RC			TPM2_RC
 #define TPM_CC			TPM2_CC
 
+#define TPM_RS_PW		TPM2_RS_PW
+
 #define TPM_ALG_ID		TPM2_ALG_ID
 #define TPM_SE			TPM2_SE
 #define TPM_SE_HMAC		TPM2_SE_HMAC
@@ -942,7 +944,10 @@ tpm2_CreatePrimary(TSS_CONTEXT *tssContext, TPM_HANDLE primaryHandle,
 	creationPcr.count = 0;
 
 	intel_auth_helper(tssContext, primaryHandle, authVal);
-	intel_sess_helper(tssContext, auth, TPMA_SESSION_DECRYPT);
+	if (auth == TPM_RS_PW)
+		auth = ESYS_TR_PASSWORD;
+	else
+		intel_sess_helper(tssContext, auth, TPMA_SESSION_DECRYPT);
 	rc = Esys_CreatePrimary(tssContext, primaryHandle, auth, ESYS_TR_NONE,
 				ESYS_TR_NONE, inSensitive, inPublic,
 				&outsideInfo, &creationPcr, objectHandle,
