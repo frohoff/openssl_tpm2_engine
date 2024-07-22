@@ -724,7 +724,7 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 	TPM_RC rc;
 	TPM2B_SENSITIVE_CREATE inSensitive;
 	TPM2B_PUBLIC inPublic;
-	TPM_HANDLE session;
+	TPM_HANDLE session = TPM_RS_PW;
 
 	if (auth) {
 		VAL_2B(inSensitive.sensitive.userAuth, size) = strlen(auth);
@@ -763,16 +763,19 @@ TPM_RC tpm2_load_srk(TSS_CONTEXT *tssContext, TPM_HANDLE *h, const char *auth,
 
 	/* use a bound session here because we have no known key objects
 	 * to encrypt a salt to */
-	rc = tpm2_get_bound_handle(tssContext, &session, hierarchy, auth);
-	if (rc)
-		return rc;
+	if (auth) {
+		rc = tpm2_get_bound_handle(tssContext, &session, hierarchy, auth);
+		if (rc)
+			return rc;
+	}
 
 	rc = tpm2_CreatePrimary(tssContext, hierarchy, &inSensitive, &inPublic,
 				h, pub, session, auth);
 
 	if (rc) {
 		tpm2_error(rc, "TSS_CreatePrimary");
-		tpm2_flush_handle(tssContext, session);
+		if (session != TPM_RS_PW)
+			tpm2_flush_handle(tssContext, session);
 	}
 
 	return rc;
