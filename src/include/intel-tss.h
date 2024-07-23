@@ -251,14 +251,6 @@ intel_sess_helper(TSS_CONTEXT *tssContext, TPM_HANDLE auth, TPMA_SESSION flags)
 				  TPMA_SESSION_CONTINUESESSION | flags);
 }
 
-static inline TPM_HANDLE
-intel_handle(TPM_HANDLE h)
-{
-	if (h == 0)
-		return ESYS_TR_NONE;
-	return h;
-}
-
 static inline void
 TSS_Delete(TSS_CONTEXT *tssContext)
 {
@@ -937,8 +929,10 @@ tpm2_CreatePrimary(TSS_CONTEXT *tssContext, TPM_HANDLE primaryHandle,
 	TPM2B_PUBLIC *opub;
 	TPM_RC rc;
 
-	/* FIXME will generate wrong value for NULL hierarchy */
-	primaryHandle = intel_handle(primaryHandle);
+
+	/* TPM_RH_NULL is mapped to ESYS_TR_NONE, which won't work here */
+	if (primaryHandle == TPM_RH_NULL)
+		primaryHandle = INT_TPM_RH_NULL;
 
 	outsideInfo.size = 0;
 	creationPcr.count = 0;
@@ -993,9 +987,7 @@ tpm2_StartAuthSession(TSS_CONTEXT *tssContext, TPM_HANDLE tpmKey,
 		      TPM_HANDLE *sessionHandle,
 		      const char *bindPassword)
 {
-	bind = intel_handle(bind);
-	tpmKey = intel_handle(tpmKey);
-	if (bind != ESYS_TR_NONE)
+	if (bind != TPM_RH_NULL)
 		intel_auth_helper(tssContext, bind, bindPassword);
 
 	return Esys_StartAuthSession(tssContext, tpmKey, bind, ESYS_TR_NONE,
@@ -1203,6 +1195,19 @@ static inline TPM_HANDLE
 tpm2_handle_ext(TSS_CONTEXT *tssContext, TPM_HANDLE esysh)
 {
 	TPM2_HANDLE realh = 0;
+
+	switch (esysh) {
+	case ESYS_TR_RH_OWNER:
+		return EXT_TPM_RH_OWNER;
+	case ESYS_TR_RH_PLATFORM:
+		return EXT_TPM_RH_PLATFORM;
+	case ESYS_TR_RH_ENDORSEMENT:
+		return EXT_TPM_RH_ENDORSEMENT;
+	case ESYS_TR_RH_NULL:
+		return EXT_TPM_RH_NULL;
+	case ESYS_TR_NONE:
+		return EXT_TPM_RH_NULL;
+	}
 
 	Esys_TR_GetTpmHandle(tssContext, esysh, &realh);
 
