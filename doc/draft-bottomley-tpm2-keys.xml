@@ -65,8 +65,9 @@ An alternate method (rfc include) is described in the references.
 	  <dd>Abstract Syntax Notation defined in
 	  <xref target="X.680"/></dd>
 	  <dt>DER</dt>
-	  <dd>Distinguished Encoding Rules. Basically a defined binary
-	  representation for ASN.1</dd>
+	  <dd>Distinguished Encoding Rules defined in <xref
+	  target="X.690"/>. Basically a defined binary representation
+	  for ASN.1</dd>
 	  <dt>MSO</dt>
 	  <dd>Most Significant Octet (the highest order
 	  byte of an integer)</dd>
@@ -155,7 +156,7 @@ An alternate method (rfc include) is described in the references.
 	    TPM2_Load/Import/Unseal command whether it must also send
 	    down an authorization, so this parameter gives that
 	    indication.  emptyAuth MUST be true if authorization is
-	    NOT required and MUST BE either false or absent if
+	    NOT required and MUST be either false or absent if
 	    authorization is required.  Since this element has
 	    three states (one representing true and two representing
 	    false) it is RECOMMENDED that implementations emitting
@@ -613,6 +614,13 @@ An alternate method (rfc include) is described in the references.
 	Implementations SHOULD minimize the number of TPM2_Import
 	operations by caching the emitted TPM2B_PRIVATE.
       </t>
+      <t>
+	Some applications have broken DER encoding and emit values
+	other than the required 0xFF for BOOLEAN TRUE (see <xref
+	target="X.690"/> section 11.1 "Boolean values"). When parsing
+	DER encodings, implementations SHOULD accept any non-zero
+	octet as BOOLEAN TRUE.
+      </t>
     </section>
     <section anchor="security" title="Security Considerations">
       <t>
@@ -727,6 +735,18 @@ An alternate method (rfc include) is described in the references.
 	  <author><organization>International Telecommunication Union</organization></author>
 	  <date year="2015" month="August"/>
 	</front>
+      </reference>
+      <reference anchor="X.690" target="https://www.itu.int/rec/T-REC-X.690-202102-I">
+       <front>
+	 <title>
+	   ITU-T Recommendataion X.690,
+	   Information technology – ASN.1 encoding rules:
+	   Specification of Basic Encoding Rules (BER), Canonical
+	   Encoding Rules (CER) and Distinguished Encoding Rules
+	   (DER)</title>
+	 <author><organization>International Telecommunication Union</organization></author>
+	 <date year="2021" month="February"/>
+       </front>
       </reference>
       <reference anchor="TCG-Provision" target="https://trustedcomputinggroup.org/resource/tcg-tpm-v2-0-provisioning-guidance/">
 	<front>
