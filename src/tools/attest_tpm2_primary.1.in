@@ -1,0 +1,103 @@
+[name]
+attest_tpm2_primary - perform certification and attestation operations for primary keys
+
+[description]
+
+TPMs have a complex set of commands for verifying primary keys.  Any
+TPM created signing key can be used to produce a "certification" of
+another key (a signed proof that key is present in the TPM).  However,
+the way this signing key is generated from a TPM X.509 certificate
+involves a complicated challenge/response round trip.  This tool is
+designed to present a simple way to perform the mechanics of these
+commands.
+
+[threat model]
+
+TPMs are vulnerable to man in the middle type attacks known as
+interposer attacks.  The first line of defence against them is to use
+TPM sessions for encryption and HMAC checking.  However, even after
+this is done, several other possible attacks remain including a reset
+based attack and a public key deception attack.  For more details see
+the Linux Kernel TPM security document:
+
+https://docs.kernel.org/security/tpm/tpm-security.html
+
+Public key deception is a problem because when salting sessions most
+TPM applications simply ask the TPM for a public key to encrypt the
+salt to.  So, if the interposer returns a key of its choosing, to
+which it has the private part, it can intercept and decrypt the
+session salt (and re-encrypt it with the correct key to pass on to the
+underlying TPM), significantly reducing or eliminating the security
+provided by sessions.  The solution to this problem is to verify the
+TPM provided key before it is used.
+
+[Attestation Keys]
+
+The original design of the TPM was to derive many disposable
+attestation keys (AKs) to frustrate tracking when used online.  This
+scheme involved a trusted PrivacyCA which would take the TPM EK,
+certificate and Attestation Key and return an Attestation Key
+Certificate if it all checked out.  The way this worked is that the
+PrivacyCA would construct a packet that could only be decrypted by a
+TPM2_ActivateCredential command, which involved a decryption operation
+that would only succeed if the TPM possessed the private parts of both
+the EK and the AK.  If this succeeded, the TPM could return the
+decrypted challenge to the PrivacyCA which would then issue the
+certificate.
+
+Unfortunately, no PrivacyCA was ever stood up and the threat model
+above really requires us to verify the TPM locally (so no privacy
+issues are involved).  The quick fix is to get the TPM to derive a
+signing EK key and attest it once with the TPMs EK certificate using
+the MakeCredential/ActivateCredential round trip locally.
+
+Ideally the name (unique hash) of this signing key should be
+permanently stored in the filesystem, say at /etc/eksign.name for use
+across boots.  Since this signing key is derived from the endorsement
+seed, which never changes even across TPM ownership changes it should
+be stable.
+
+For TPMs which don't have attestation certificates, this key should be
+collected when a laptop is first powered on with:
+
+  $ attest_tpm2_primary --eksign > /etc/eksign.name
+
+Which will derive the signing key and output it's name.
+
+If you do have an attestation certificate for your TPM, you should
+verify this signing key using the MakeCredential/ActivateCredential
+sequence thus:
+
+  $ attest_tpm2_primary --attest tpm-certificate.crt \\
+      --name /etc/eksign.name
+
+You should also verify tpm-certificate.crt chains back to the
+manufacturer.
+
+[kernel TPM verification]
+
+From version 6.10 onward, the Linux kernel uses sessions encrypted to
+the TPM NULL key to defeat interposer reset attacks.  Since the kernel
+exports the name of the NULL key it found, you can certify this key
+against your signing EK on every boot to be sure of the fidelity of
+the boot.
+
+  $ attest_tpm2_primary --certify null --name /etc/eksign.name \\
+      /sys/class/tpm/tpm0/null_name
+
+Which can be done via a systemd or other init system script.
+
+[Secure Import key]
+
+For importable keys and sealed objects, you need to be completely sure
+that the parent public key is correct.  Since most objects are stored
+in the owner hierarchy under the Storage Root Key (SRK), you can
+generate a verified public key to give out as an import key using
+
+  $ attest_tpm2_primary --certify --owner --name /etc/eksign.name \\
+      --file srk.pub
+
+Which will generate a PEM public key corresponding to the storage root
+only if the public part of the storage key can be certified against
+the signing EK, which ensures an interposer didn't give you the wrong
+public key to use for import.

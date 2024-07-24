@@ -1,9 +1,10 @@
 if NATIVE_BUILD
 EXTRA_DIST = create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
-	unseal_tpm2_data.1 signed_tpm2_policy.1 openssl_tpm2_engine.7
+	unseal_tpm2_data.1 signed_tpm2_policy.1 openssl_tpm2_engine.7 \
+	attest_tpm2_primary.1
 
 man1_MANS = create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
-	unseal_tpm2_data.1 signed_tpm2_policy.1
+	unseal_tpm2_data.1 signed_tpm2_policy.1 attest_tpm2_primary.1
 man7_MANS = openssl_tpm2_engine.7
 
 CLEANFILES = $(man1_MANS)
