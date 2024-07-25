@@ -31,6 +31,7 @@ TESTS += ../check_curves.sh \
 	../check_signed_policies.sh \
 	../check_locality.sh \
 	../check_secret_policies.sh \
+	../attestation.sh \
 	../stop_sw_tpm.sh
 
 fail_connect.sh: tpm_server_found
@@ -56,7 +57,7 @@ endif
 
 TEST_EXTENSIONS = .sh
 
-CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der seal.* fifo tss2.*
+CLEANFILES = key*.tpm key*.pub key*.priv tmp.* NVChip h*.bin key*.der seal.* fifo tss2.* *.name
 clean-local:
 	rm -fr testdir
 

@@ -2,8 +2,7 @@
 
 
 # export the parent key as a EC and RSA public key
-prim=$(tsscreateprimary -ecc nistp256 -hi o -opem srk.pub | sed 's/Handle //') || exit 1
-tssflushcontext -ha ${prim} || exit 1
+${bindir}/attest_tpm2_primary --certify owner --name ${testdir}/eksign.name --file srk.pub || exit 1
 prim=$(tsscreateprimary -rsa 2048 -hi o -opem srkrsa.pub | sed 's/Handle //') || exit 1
 tssflushcontext -ha ${prim} || exit 1
 

@@ -56,3 +56,5 @@ key=$(tsscreateprimary -hi o -st -rsa|sed 's/Handle //') && \
 tssevictcontrol -hi o -ho ${key} -hp 81000001 && \
 tssflushcontext -ha ${key}
 
+${bindir}/attest_tpm2_primary --ek > ${testdir}/eksign.name || exit 1
+${bindir}/attest_tpm2_primary --certify null --outname --name ${testdir}/eksign.name > ${testdir}/null.name || exit 1

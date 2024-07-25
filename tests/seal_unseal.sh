@@ -48,8 +48,7 @@ for n in sha1 sha256 sha384; do
     else
 	POLICYFILE="${testdir}/policies/policy_pcr${n}.txt"
     fi
-    prim=$(tsscreateprimary -hi o -st -ecc nistp256 -opem srk.pub | sed 's/Handle //') || exit 1
-    tssflushcontext -ha $prim
+    ${bindir}/attest_tpm2_primary -C owner -n ${testdir}/eksign.name -f srk.pub || exit 1
     TPM_INTERFACE_TYPE= echo $DATA | ${bindir}/seal_tpm2_data -n ${n} -a -k ${AUTH} --import srk.pub seal.tpm || exit 1;
     ${bindir}/unseal_tpm2_data -k ${AUTH} seal.tpm | grep -q "${DATA}" || exit 1;
     rm seal.tpm
