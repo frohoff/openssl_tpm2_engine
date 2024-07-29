@@ -1,8 +1,10 @@
 if NATIVE_BUILD
 EXTRA_DIST = create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
-	unseal_tpm2_data.1 signed_tpm2_policy.1
+	unseal_tpm2_data.1 signed_tpm2_policy.1 openssl_tpm2_engine.7
+
 man1_MANS = create_tpm2_key.1 load_tpm2_key.1 seal_tpm2_data.1 \
 	unseal_tpm2_data.1 signed_tpm2_policy.1
+man7_MANS = openssl_tpm2_engine.7
 
 CLEANFILES = $(man1_MANS)
 endif
@@ -35,3 +37,7 @@ signed_tpm2_policy_CFLAGS=${DEPS_CFLAGS}
 
 $(builddir)/%.1: $(srcdir)/%.1.in $(builddir)/%
 	$(HELP2MAN) --no-info -i $< -o $@ $(builddir)/$*
+
+$(builddir)/%.7: $(srcdir)/%.7.in
+	$(HELP2MAN) --no-info --section=7 --source=${VERSION} -i $< /bin/true |\
+	sed 's/TRUE/OPENSSL-TPM2-ENGINE/' > $@

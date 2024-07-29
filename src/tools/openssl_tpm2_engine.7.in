@@ -1,0 +1,65 @@
+[NAME]
+
+openssl_tpm2_engine - engine or provider of TPM2 keys for OpenSSL
+
+[SYNOPSIS]
+
+Describes how to use the OpenSSL TPM2 engine or provider (engines work
+for all current OpenSSL versions but have a special engine key file
+API; providers only work for OpenSSL 3 but use normal key file APIs).
+
+[=DESCRIPTION]
+
+Acts as a plugin to OpenSSL to support TPM2 keys.  If the plugin is an
+engine, the correct engine specifications (ENGINE_load_private_key(3ssl))
+must be used for keyfiles.  If the plugin is a provider then OpenSSL
+will automatically recognize TPM2 key files in place of ordinary
+OpenSSL PEM or DER keyfiles (PEM_read_PrivateKey(3ssl),
+d2i_PrivateKey_bio(3ssl), d2i_PrivateKey_fp(3ssl)).
+
+The engine or provider is named "tpm2" and can either be specified on
+the command line or can be automatically loaded in openssl.cnf in
+either the engines or providers section, see OpenSSL config(5ssl).
+
+[OPTIONS]
+
+Config file options for the engine (see Openssl config(5ssl) for details) are
+
+NVPREFIX      Set the Non Volatile key prefix (default //nvkey:)
+
+PIN           Set the Storage Root Hierarchy or key authority
+
+[ENVIRONMENT]
+
+When compiled for the Intel TSS the following IBM TSS environment
+variables are understood:
+
+TPM_INTERFACE_TYPE   either device or socsim.  socsim will activate the
+                     tcti interface for either the ms or swtpm (see
+                     SWTPM)
+
+SWTPM                either mssim or swtpm.  Identifies the flavour of
+                     vTPM being used for tcti.
+
+[=AUTHOR]
+
+Written by James Bottomley <James.Bottomley@HansenPartnership.com>
+
+[REPORTING BUGS]
+
+Report bug to <openssl-tpm2-engine@groups.io>
+
+[=COPYRIGHT]
+
+Copyright 2024 by James Bottomley License LGPL-2.1-only.
+
+[FILES]
+/etc/ssl/openssl.cnf
+
+[SEE ALSO]
+
+config(5ssl),
+ENGINE_load_private_key(3ssl),
+PEM_read_PrivateKey(3ssl),
+d2i_PrivateKey_bio(3ssl),
+d2i_PrivateKey_fp(3ssl).
